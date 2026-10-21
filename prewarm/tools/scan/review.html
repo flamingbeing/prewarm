@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Check scanned forms</title>
+<link rel="stylesheet" href="https://design.anawj.com/v1/tokens.css">
+<style>
+  :root { --ink: #1b2a41; --line: #c9d1dc; --bad: #b00020; --ok: #1a7f37; --navy: #002f6c; }
+  * { box-sizing: border-box; }
+  body { font: 16px/1.4 system-ui, sans-serif; margin: 0; color: var(--ink); background: #fff; }
+  .band { display: grid; grid-template-columns: repeat(4, 1fr); height: 6px; }
+  .band i:nth-child(1) { background: #e57200 } .band i:nth-child(2) { background: #e4002b }
+  .band i:nth-child(3) { background: #178fd7 } .band i:nth-child(4) { background: #002f6c }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: .4em 0; }
+  :focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+  button, input[type=file]::file-selector-button { font: inherit; min-height: 44px; padding: 0 16px; border: 1px solid var(--navy); background: #fff; color: var(--navy); border-radius: 6px; cursor: pointer; }
+  button.primary { background: var(--navy); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .bar { position: sticky; top: 0; background: #fff; padding: 8px 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; z-index: 2; }
+  .row { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .row.flag { border-color: var(--bad); border-width: 2px; }
+  .row.done { background: #f2faf4; border-color: var(--ok); }
+  .row img { max-width: 100%; height: auto; border: 1px solid var(--line); background: #fff; image-rendering: auto; }
+  .label { font-weight: 600; } .unit { color: #5b6878; }
+  .flags { color: var(--bad); margin: 6px 0; padding-left: 1.1em; }
+  .flags li::marker { content: "⚠ "; }
+  .ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  input[type=text] { font: inherit; min-height: 44px; padding: 0 10px; border: 1px solid #5b6878; border-radius: 6px; width: 10em; }
+  label.opt { display: inline-flex; gap: 6px; align-items: center; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; }
+  .reads { color: #5b6878; font-size: .9rem; }
+  .pages { font-size: .9rem; color: #5b6878; }
+</style>
+</head>
+<body>
+<div class="band" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<main>
+  <h1>Check scanned forms</h1>
+  <p>Open the <code>scan.json</code> from the scan tool. Everything stays on this computer: nothing is uploaded.
+     Compare each photo crop with the value, fix it if needed, then confirm. Only confirmed values are saved.</p>
+  <p><input id="file" type="file" accept=".json,application/json" aria-label="Open scan.json"></p>
+  <div id="app" hidden>
+    <div class="bar">
+      <label for="show">Show</label>
+      <select id="show" style="min-height:44px"><option value="check">Needs checking</option><option value="filled">Everything filled</option><option value="all">All fields</option></select>
+      <span id="count" aria-live="polite"></span>
+      <button id="save" class="primary" disabled>Save reviewed file</button>
+    </div>
+    <p id="pages" class="pages"></p>
+    <div id="list"></div>
+  </div>
+</main>
+<script>
+'use strict';
+let scan = null, state = {};   // state[id] = { value, confirmed }
+const $ = id => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) k.includes('-') ? e.setAttribute(k, v) : (e[k] = v);
+  kids.forEach(k => e.append(k)); return e;
+};
+const filled = e => e.value != null || e.kind === 'text' && e.reads && e.reads.length || e.flags.length;
+
+$('file').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try { scan = JSON.parse(await f.text()); } catch { alert('That is not a scan.json file.'); return; }
+  state = {};
+  for (const [id, e] of Object.entries(scan.fields)) state[id] = { value: e.value == null ? '' : String(e.value), confirmed: false };
+  $('app').hidden = false;
+  $('pages').textContent = scan.pages.map(p => `${p.photo}: page ${p.page}, ${p.accepted ? 'lined up (' + p.score + ')' : 'REJECTED, retake the photo (' + p.score + ')'}`).join(' · ');
+  render();
+});
+$('show').addEventListener('change', render);
+
+function visible(id) {
+  const e = scan.fields[id], mode = $('show').value;
+  if (mode === 'all') return true;
+  if (mode === 'filled') return filled(e);
+  return e.flags.length > 0 || (filled(e) && !state[id].confirmed);
+}
+
+function render() {
+  const list = $('list'); list.textContent = '';
+  const ids = Object.keys(scan.fields).filter(visible).sort((a, b) => scan.fields[b].flags.length - scan.fields[a].flags.length);
+  for (const id of ids) list.append(row(id));
+  update();
+}
+
+function row(id) {
+  const e = scan.fields[id], s = state[id];
+  const r = el('section', { className: 'row' + (e.flags.length ? ' flag' : '') + (s.confirmed ? ' done' : '') });
+  r.append(el('div', { className: 'label' }, e.label, e.unit ? el('span', { className: 'unit', textContent: ' (' + e.unit + ')' }) : ''));
+  if (e.crop) r.append(el('p', {}, el('img', { src: 'data:image/png;base64,' + e.crop, alt: 'Photo of the ' + e.label + ' entry' })));
+  if (e.flags.length) r.append(el('ul', { className: 'flags' }, ...e.flags.map(t => el('li', { textContent: t }))));
+  if (e.notes && e.notes.length) r.append(el('div', { className: 'reads', textContent: e.notes.join('; ') }));
+  if (e.reads && e.reads.length) r.append(el('div', { className: 'reads', textContent: 'Read as: ' + e.reads.map(x => '“' + x + '”').join(' and ') }));
+  const ctl = el('div', { className: 'ctl' });
+  if (e.kind === 'tick') {
+    const none = el('input', { type: 'radio', name: id, checked: s.value === '' });
+    none.addEventListener('change', () => set(id, '', r));
+    ctl.append(el('label', { className: 'opt' }, none, 'None ticked'));
+    for (const [k, l] of (e.opts || Object.keys(e.inks).map(k => [k, k]))) {
+      const rb = el('input', { type: 'radio', name: id, checked: String(k) === s.value });
+      rb.addEventListener('change', () => set(id, String(k), r));
+      ctl.append(el('label', { className: 'opt' }, rb, String(l)));
+    }
+  } else {
+    const inp = el('input', { type: 'text', value: s.value, inputMode: 'decimal', autocomplete: 'off', 'aria-label': e.label });
+    inp.addEventListener('input', () => set(id, inp.value.trim(), r));
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); confirm(id, r, true); } });
+    ctl.append(inp);
+  }
+  const ok = el('button', { type: 'button', textContent: s.confirmed ? 'Confirmed ✓ (undo)' : 'Confirm' });
+  ok.addEventListener('click', () => confirm(id, r));
+  ctl.append(ok); r.append(ctl);
+  return r;
+}
+
+function set(id, v, r) { state[id].value = v; state[id].confirmed = false; refresh(id, r); }
+function confirm(id, r, next) {
+  state[id].confirmed = !state[id].confirmed || !!next; refresh(id, r);
+  if (next) { const n = r.nextElementSibling; if (n) n.querySelector('input[type=text], button')?.focus(); }
+}
+function refresh(id, r) { const n = row(id); r.replaceWith(n); update(); if (!(state[id].confirmed)) n.querySelector('input[type=text], button')?.focus(); }
+
+function update() {
+  const need = Object.keys(scan.fields).filter(id => filled(scan.fields[id]) || state[id].value !== '');
+  const done = need.filter(id => state[id].confirmed).length;
+  $('count').textContent = `${done} of ${need.length} filled fields confirmed`;
+  $('save').disabled = done === 0;
+  $('save').textContent = done === need.length ? 'Save reviewed file' : 'Save confirmed so far';
+}
+
+$('save').addEventListener('click', () => {
+  const fields = {};
+  for (const [id, s] of Object.entries(state)) if (s.confirmed && s.value !== '') fields[id] = s.value;
+  const a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify({ fields }, null, 1)], { type: 'application/json' })), download: 'patient.reviewed.json' });
+  document.body.append(a); a.click(); a.remove();
+});
+</script>
+</body>
+</html>

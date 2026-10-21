@@ -1,0 +1,6 @@
+__pycache__/
+# the form's field map comes from the real form, and scans are patient data: never commit them
+form-data/
+scans/
+*.reviewed.json
+scan.json
