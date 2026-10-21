@@ -1,9 +1,11 @@
-# <repo name>
+# prewarm
 
 Instructions for every AI assistant working here (Claude Code reads this through `CLAUDE.md`).
-Replace the placeholders in angle brackets, then delete this line.
 
-<One or two lines: what this repo is and who uses it.>
+The prewarming study app (`prewarm/`) at prewarmstudy.anawj.com: the study team records each patient's warming,
+temperatures and readings on their phones, synced through Firebase (project `prewarm-study`). Moved here from
+anawj-site in the repo split (21 Oct 2026); the app's own notes are in `prewarm/` (`NOTES.md`, `PLAN.md`, `RUNBOOK.md`,
+`STATUS.md`, `docs/`).
 
 ## Public here, private elsewhere
 
@@ -13,13 +15,24 @@ repo; never copy anything from there into this repo, a PR or an issue (neutral p
 
 ## Rules that bite
 
-- <Rule the next session must not get wrong.>
+- **Vital app (live study data):** full tests before merging (below), and nothing merged while the owner says a case
+  is being collected. Fake data only in tests and screenshots.
+- The service worker's `VERSION` stays plain (`prewarm-vN`); the Workers Builds build command stamps it per deploy
+  (`node tools/stamp-versions.mjs`). Don't commit a stamped one.
+- The design kit loads from `https://design.anawj.com/v1/` (another repo); don't copy it in.
+- `worker/scan.js` relays scan photos to the study computer behind Cloudflare Access. Its settings (`ACCESS_TEAM`,
+  `SCAN_ACCESS_AUD`, `SCAN_ORIGIN`, `SCAN_CLIENT_ID`, `SCAN_CLIENT_SECRET`) live in the Cloudflare dashboard, never here.
+- Firestore rules are in `prewarm/firestore.rules`; `.github/workflows/deploy-firestore-rules.yml` deploys them
+  with its own service account (keyless, GitHub's OIDC sign-in). Run the rules tests before changing them.
 
 ## Checks before merging
 
 ```
-node tools/check.mjs        # repo checks + Worker tests
+node tools/check.mjs        # repo checks + Worker tests (CI runs this and the unit tests)
 node tools/proofread.mjs    # page and doc mistakes
+tools/test-prewarm.sh       # unit tests + the six browser tests (~2 min; needs PLAYWRIGHT_PATH, CHROMIUM_PATH)
+tools/test-rules.sh         # Firestore rules in the emulator (needs Java)
+tools/test-prewarm-sync.sh  # two phones through the emulators (needs Java; tools from test-rules.sh)
 ```
 
 ## Working with the owner

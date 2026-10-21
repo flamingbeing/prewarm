@@ -1,0 +1,209 @@
+rules_version = '2';
+
+// Prewarming study (Firebase project prewarm-study). Deployed by the "Deploy Firestore rules" workflow on merge to main
+// (only when this file changes; check the run in Actions).
+//
+// Who:
+//   members/{uid}   a phone that joined with its hospital's code (anonymous sign-in): { site, initials, code, joinedAt }
+//   admins/{email}  owner and investigators, signed in by email link (the owner added the first one in the console):
+//                   { addedBy, addedAt }. Any admin adds another (lower-case email as the id) or removes one; nobody
+//                   removes themselves, so there is always at least one.
+//   codes/{site}    each hospital's join code: { code, setAt, setBy }; only admins read or change it
+// Data:
+//   patients/{id}   { site, created, deleted?, lock?, f: { fieldId: { v, t, by, auto? } } }
+//                   members read and write their own hospital's patients; admins all of them.
+//                   lock { on, t, by }: only admins set it; while on, the patient is read only for everyone
+//                   (an admin can only unlock it) and hidden from members altogether. locked (bool) mirrors
+//                   lock.on so members can query `site == X && locked == false` (rules aren't filters).
+//   pacu/{token}    the PACU nurse's link: { site, pid, sid, created, f: { fieldId: { v, t, by, auto? } } }. The document id is a
+//                   long random token and is the secret. A member (own hospital) or admin makes and stops it; anyone
+//                   signed in (an anonymous sign-in on the nurse's phone) who knows the token reads it and writes ONLY
+//                   the PACU fields listed below. Nobody lists tokens (admins aside).
+//   shares/{token}  the Share subject link (owner, 21 Oct 2026): { site, pid, sid, created, by }. Like pacu/{token}, the
+//                   long random id is the secret; the patient's team (or an admin) makes it, only admins stop it.
+//   guests/{uid}_{pid}  a phone that opened a Share subject link: { token, pid, joinedAt }. It may read and edit that
+//                   one patient (not lock, delete or list anything) while the link exists and the patient is unlocked.
+//                   Stopping the link (deleting shares/{token}) ends every guest's access at once.
+//   forms/blank     the blank paper data collection form (.docx, base64), uploaded by an admin:
+//                   { b64, name, size, setAt, setBy }; members and admins read it (the Form view fills it in).
+//   scanImports/{id}  Firetop's reading of one received scan, waiting for an admin:
+//                   { scan, subject?, createdAt, status: 'pending'|'approved'|'rejected', pages,
+//                   fields: { fieldId: { v, flags, page?, box?: { x, y, w, h } } }, reviewedBy?, reviewedAt? }. Values only, no
+//                   photos or crops: subject is the Subject ID typed on the phone, box the field's place on its page (fractions).
+//                   No app user can create one: Firetop writes them with its own Google sign-in. Admins read them and can only
+//                   mark a pending one approved or rejected (nothing else in it changes). Approving copies values into a
+//                   patient through the patients rules below.
+//   payments/{pid}  the participant's email and PayNow number for their payment (owner, 21 Oct 2026), kept out of the
+//                   patient record: { site, pid, sid, email?, paynow?, setAt, setBy, emailSent?, paid?, cleared? }
+//                   (the last three { t, by }). The patient's hospital team (or an admin) creates it and may replace
+//                   the email, PayNow and Subject ID, but nobody except admins reads it, and only admins tick Email sent
+//                   / Payment sent, delete the email and PayNow (cleared), or delete the whole entry.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function sites() { return ['NTF', 'NUH', 'SGH', 'CGH', 'TTSH', 'KTPH', 'WH']; }
+    function signedIn() { return request.auth != null; }
+    function email() { return request.auth.token.email.lower(); }
+    function admin() {
+      return signedIn() && request.auth.token.get('email_verified', false) == true
+        && exists(/databases/$(database)/documents/admins/$(email()));
+    }
+    function memberDoc() { return /databases/$(database)/documents/members/$(request.auth.uid); }
+    function member() { return signedIn() && exists(memberDoc()); }
+    function memberSite() { return get(memberDoc()).data.site; }
+    function canUse(site) { return admin() || (member() && memberSite() == site); }
+    // a phone that opened this patient's Share subject link, while the link still exists (and is for this hospital)
+    function guestOf(pid, site) {
+      let g = /databases/$(database)/documents/guests/$(request.auth.uid + '_' + pid);
+      let s = /databases/$(database)/documents/shares/$(get(g).data.token);
+      return signedIn() && exists(g) && exists(s) && get(s).data.pid == pid && get(s).data.site == site;
+    }
+
+    match /admins/{adminEmail} {
+      // a signed-in user may check whether their email is an admin; admins manage the list
+      allow get: if signedIn() && request.auth.token.get('email', '') != '' && adminEmail == email();
+      allow read: if admin();
+      allow create: if admin() && adminEmail == adminEmail.lower() && adminEmail.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+        && adminEmail.size() <= 120
+        && request.resource.data.keys().hasOnly(['addedBy', 'addedAt'])
+        && request.resource.data.addedBy == email() && request.resource.data.addedAt is number;
+      allow delete: if admin() && adminEmail != email();
+    }
+
+    match /codes/{site} {
+      allow read: if admin();
+      allow write: if admin() && site in sites()
+        && request.resource.data.keys().hasOnly(['code', 'setAt', 'setBy'])
+        && request.resource.data.code is string && request.resource.data.code.size() >= 6 && request.resource.data.code.size() <= 40;
+    }
+
+    match /members/{uid} {
+      // joining: only with the hospital's current code
+      allow create: if signedIn() && uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['site', 'initials', 'code', 'joinedAt'])
+        && request.resource.data.site in sites()
+        && request.resource.data.initials is string && request.resource.data.initials.size() <= 6
+        && exists(/databases/$(database)/documents/codes/$(request.resource.data.site))
+        && request.resource.data.code == get(/databases/$(database)/documents/codes/$(request.resource.data.site)).data.code;
+      // a member may change only their initials, and may leave
+      allow update: if signedIn() && uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['initials'])
+        && request.resource.data.initials is string && request.resource.data.initials.size() <= 6;
+      allow get, delete: if signedIn() && uid == request.auth.uid;
+      allow read, delete: if admin();
+    }
+
+    match /forms/{id} {
+      allow read: if admin() || member();
+      allow write: if admin() && id == 'blank'
+        && request.resource.data.keys().hasOnly(['b64', 'name', 'size', 'setAt', 'setBy'])
+        && request.resource.data.b64 is string && request.resource.data.b64.size() < 1000000
+        && request.resource.data.name is string && request.resource.data.name.size() <= 200;
+      allow delete: if admin();
+    }
+
+    match /scanImports/{id} {
+      allow read, delete: if admin();
+      allow update: if admin() && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedBy', 'reviewedAt'])
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.reviewedBy == email() && request.resource.data.reviewedAt is number;
+    }
+
+    match /payments/{pid} {
+      function stamp(d, k) {
+        return !(k in d) || (d[k] is map && d[k].keys().hasOnly(['t', 'by']) && d[k].t is number
+          && d[k].by is string && d[k].by.size() <= 120);
+      }
+      function payShape(d) {
+        return d.keys().hasOnly(['site', 'pid', 'sid', 'email', 'paynow', 'setAt', 'setBy', 'emailSent', 'paid', 'cleared'])
+          && d.site in sites() && d.pid == pid && pid.size() <= 40 && d.sid is string && d.sid.size() <= 60
+          && d.setAt is number && d.setBy is string && d.setBy.size() <= 120
+          && (!('email' in d) || (d.email is string && d.email.size() <= 120))
+          && (!('paynow' in d) || (d.paynow is string && d.paynow.size() <= 20))
+          && stamp(d, 'emailSent') && stamp(d, 'paid') && stamp(d, 'cleared');
+      }
+      allow read, delete: if admin();
+      allow create: if (canUse(request.resource.data.site) || guestOf(pid, request.resource.data.site)) && payShape(request.resource.data)
+        && (admin() || !request.resource.data.keys().hasAny(['emailSent', 'paid', 'cleared']));
+      allow update: if payShape(request.resource.data) && request.resource.data.site == resource.data.site
+        && (admin() || ((canUse(resource.data.site) || guestOf(pid, resource.data.site))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sid', 'email', 'paynow', 'setAt', 'setBy'])));
+    }
+
+    match /pacu/{token} {
+      // the PACU page's fields and its complete tick (kept in step with PACU_KEYS in js/schema.js by a unit test)
+      function pacuKeys() {
+        return ['pacu_in', 'pacu_out', 'pacu_temp', 'pacu_shiver', 'pacu_ponv', 'pacu_hypot', 'pacu_tx', 'pacu_pain',
+          'nd_dis', 'nd_beh', 'nd_com', 'nd_ill', 'nd_psy', 'pacu_nudesc', 'pacu_delay', 'pacu_delay1h', 'pacu_delay_why', 'sat_post', 'sign_pacu'];
+      }
+      function pshape(d) {
+        return d.keys().hasOnly(['site', 'pid', 'sid', 'created', 'f'])
+          && d.site in sites() && d.pid is string && d.pid.size() <= 40 && d.sid is string && d.sid.size() <= 60
+          && d.created is number && d.f is map && d.f.keys().hasOnly(pacuKeys());
+      }
+      allow get: if signedIn();
+      allow list: if admin();
+      allow create: if (canUse(request.resource.data.site) || guestOf(request.resource.data.pid, request.resource.data.site))
+        && token.size() >= 20 && token.size() <= 64 && pshape(request.resource.data);
+      // the nurse (or anyone with the link) changes only f; the team may also correct the Subject ID shown
+      allow update: if signedIn() && pshape(request.resource.data)
+        && request.resource.data.site == resource.data.site && request.resource.data.pid == resource.data.pid
+        && request.resource.data.created == resource.data.created
+        && (request.resource.data.sid == resource.data.sid || canUse(resource.data.site));
+      allow delete: if canUse(resource.data.site);
+    }
+
+    match /shares/{token} {
+      function sshape(d) {
+        return d.keys().hasOnly(['site', 'pid', 'sid', 'created', 'by'])
+          && d.site in sites() && d.pid is string && d.pid.size() <= 40 && d.sid is string && d.sid.size() <= 60
+          && d.created is number && d.by is string && d.by.size() <= 20;
+      }
+      allow get: if signedIn();
+      allow list, delete: if admin();
+      allow create: if (canUse(request.resource.data.site) || guestOf(request.resource.data.pid, request.resource.data.site))
+        && token.size() >= 20 && token.size() <= 64 && sshape(request.resource.data);
+      // the team may correct the Subject ID shown
+      allow update: if canUse(resource.data.site) && sshape(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sid']);
+    }
+
+    match /guests/{gid} {
+      allow create, update: if signedIn() && gid == request.auth.uid + '_' + request.resource.data.pid
+        && request.resource.data.keys().hasOnly(['token', 'pid', 'joinedAt'])
+        && request.resource.data.pid is string && request.resource.data.pid.size() <= 40
+        && request.resource.data.token is string && request.resource.data.joinedAt is number
+        && exists(/databases/$(database)/documents/shares/$(request.resource.data.token))
+        && get(/databases/$(database)/documents/shares/$(request.resource.data.token)).data.pid == request.resource.data.pid;
+      allow get, delete: if signedIn() && gid == request.auth.uid + '_' + resource.data.pid;
+      allow read, delete: if admin();
+    }
+
+    match /patients/{pid} {
+      function shape(d) {
+        return d.keys().hasOnly(['site', 'created', 'deleted', 'lock', 'locked', 'f'])
+          && d.site in sites() && d.f is map && d.f.size() <= 900
+          && d.created is number && (!('deleted' in d) || d.deleted is number)
+          && (!('lock' in d) || (d.lock is map && d.lock.keys().hasOnly(['on', 't', 'by'])
+            && d.lock.on is bool && d.lock.t is number && d.lock.by is string && d.lock.by.size() <= 80))
+          && (!('locked' in d) || d.locked == locked(d));
+      }
+      function locked(d) { return 'lock' in d && d.lock.on == true; }
+      // a locked patient: admins only. Members need locked == false present (their query asks for it); no get() default
+      // here: a query that doesn't mention locked would pass it and return locked patients.
+      allow read: if admin() || (member() && memberSite() == resource.data.site && resource.data.locked == false);
+      // a Share subject guest: this one patient only, by its id (never a query), while unlocked
+      allow get: if resource.data.locked == false && guestOf(pid, resource.data.site);
+      allow create: if canUse(request.resource.data.site) && shape(request.resource.data)
+        && (admin() || !('lock' in request.resource.data));
+      allow update: if (canUse(resource.data.site)
+          || (guestOf(pid, resource.data.site) && request.resource.data.get('deleted', null) == resource.data.get('deleted', null)))
+        && shape(request.resource.data)
+        && request.resource.data.site == resource.data.site
+        && (locked(resource.data)
+          ? admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock', 'locked'])
+          : admin() || request.resource.data.get('lock', null) == resource.data.get('lock', null));
+      allow delete: if admin();
+    }
+  }
+}

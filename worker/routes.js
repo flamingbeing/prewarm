@@ -9,7 +9,9 @@
 //                                             root add a few extra folders)
 //      or { moved: { '/old/': 'https://example.org/new/' } }  (apps now on another site: each path forwards there)
 export const SITES = {
-  'example.example.com': { root: 'example/' },
+  // the prewarming study app at the root; /prewarm-update/ is its "won't update" helper page (also at
+  // anawj.com/prewarm-update/ until every phone has moved off the old address)
+  'prewarmstudy.anawj.com': { root: 'prewarm/', prefixes: { '/prewarm-update/': 'prewarm-update/' } },
 };
 
 // Folders every host serves as they are (shared files, no data), e.g. ['/shared/']

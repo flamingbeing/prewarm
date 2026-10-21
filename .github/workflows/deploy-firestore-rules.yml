@@ -1,0 +1,28 @@
+# Deploys prewarm/firestore.rules to the Firebase project prewarm-study. It signs in with GitHub's OIDC token
+# (Workload Identity Federation: only this repo may use the provider) as a service account that can only change
+# rules, so no key is stored anywhere. Manual for now (Actions > Deploy Firestore rules > Run workflow); the push
+# trigger below is added once a manual run has passed (STATUS.md).
+name: Deploy Firestore rules
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/60848902874/locations/global/workloadIdentityPools/github/providers/prewarm-repo
+          service_account: firebase-rules-deployer@prewarm-study.iam.gserviceaccount.com
+      - name: Deploy prewarm/firestore.rules to prewarm-study
+        working-directory: prewarm
+        run: |
+          echo '{"firestore":{"rules":"firestore.rules"}}' > firebase.json
+          npx --yes firebase-tools@13 deploy --only firestore:rules --project prewarm-study --non-interactive

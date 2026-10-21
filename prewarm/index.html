@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#002f6c">
+<title>Prewarming study</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&display=swap">
+<link rel="stylesheet" href="https://design.anawj.com/v1/tokens.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar"><div class="row">
+  <button id="back" class="iconbtn" aria-label="Back" hidden>‹</button>
+  <h1 id="title">Prewarming study</h1>
+  <span id="extra"></span>
+</div><nav id="ptabs" class="ptabs" role="tablist" aria-label="Readings" hidden></nav></header>
+<div id="moved" class="moved" role="status" hidden></div>
+<div id="banner" class="banner" role="alert" hidden></div>
+<button id="update" class="update" hidden>Update available: tap to reload</button>
+<button id="fresh" class="update" hidden>New readings from your team: tap to show them</button>
+<main id="view"></main>
+<div id="toast" class="toast" role="status" hidden></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

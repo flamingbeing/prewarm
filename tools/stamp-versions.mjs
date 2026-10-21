@@ -37,7 +37,7 @@ for (const app of fs.readdirSync(ROOT).filter(d => fs.existsSync(path.join(ROOT,
   if (!m) { console.error(`stamp: ${app}/sw.js has no VERSION`); process.exitCode = 1; continue; }
   const base = m[1].replace(/-\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/, '').replace(/-[0-9a-f]{8}$/, '');   // already stamped: stamp again from the base
   const shellSrc = sw.match(/const SHELL = \[([\s\S]*?)\];/)?.[1] || '';
-  const shell = [...shellSrc.matchAll(/'([^']+)'/g)].map(x => x[1]).filter(f => f !== './').map(f => path.join(ROOT, app, f));
+  const shell = [...shellSrc.matchAll(/'([^']+)'/g)].map(x => x[1]).filter(f => f !== './' && !/^https?:/.test(f)).map(f => path.join(ROOT, app, f));   // kit files from another host aren't hashed
   const files = [...new Set([...walk(path.join(ROOT, app)).filter(f => f !== swPath), ...shell])].sort();
   const hash = crypto.createHash('sha256');
   hash.update(sw.replace(RE, `const VERSION = '${base}'`));

@@ -1,0 +1,22 @@
+# The repo check (service workers, wrangler settings, Worker tests) and the prewarm unit tests, on every PR and on
+# main. The browser tests and rules tests stay with the session that changes the app (AGENTS.md).
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Repo check
+        run: node tools/check.mjs
+      - name: Unit tests
+        run: for f in prewarm/test/*.test.mjs; do echo "== $f"; node "$f" || exit 1; done
