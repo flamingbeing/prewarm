@@ -1,10 +1,12 @@
 # Deploys prewarm/firestore.rules to the Firebase project prewarm-study. It signs in with GitHub's OIDC token
 # (Workload Identity Federation: only this repo may use the provider) as a service account that can only change
-# rules, so no key is stored anywhere. Manual for now (Actions > Deploy Firestore rules > Run workflow); the push
-# trigger below is added once a manual run has passed (STATUS.md).
+# rules, so no key is stored anywhere. Runs when a merge to main changes the rules, or by hand (Run workflow).
 name: Deploy Firestore rules
 
 on:
+  push:
+    branches: [main]
+    paths: ['prewarm/firestore.rules']
   workflow_dispatch:
 
 permissions:
