@@ -134,6 +134,12 @@ assert.equal(cellFor(BY_ID.age, ''), null);
   assert.equal(rd.rows.length, 3, 'the 5-min pre-warming reading and the end-of-surgery room temp');
   assert.deepEqual(rd.rows[1].slice(0, 3), ['E2', 'Pre-warming', '5 min']);
   assert.match(rd.rows[1][5], /Core \(spot on\) 36.5/);
+  // the asked time is the reading's time on the Readings sheet, even a late one past the hour or midnight
+  assert.deepEqual(rd.rows[1][3], { v: (8 * 60 + 12) / 1440, fmt: 'time' }, 'the asked time, not the row order');
+  setVal(p, 'prewarm_10_core', '36.7', 'AB'); setVal(p, 'at_prewarm_10', '23:58', 'AB');
+  const late = workbookSheets([p], [])[2].rows.find(r => r[2] === '10 min');
+  assert.deepEqual(late[3], { v: (23 * 60 + 58) / 1440, fmt: 'time' }, 'a late time shows as asked');
+  assert.equal(late[4], 'AB');
   assert.equal(ex.rows[0][0].s, 'Subject ID');
   assert.equal(ex.rows[0][1].s, 'Hospital');
   assert.deepEqual(SITES, ['NTF', 'NUH', 'SGH', 'CGH', 'TTSH', 'KTPH', 'WH']);

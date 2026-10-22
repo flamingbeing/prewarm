@@ -1,7 +1,7 @@
 #!/bin/bash
 # Every check the prewarming app needs before merging, in one go (fake data only, about 1½ minutes):
 #   tools/test-prewarm.sh
-# Repo check and unit tests first, then the three browser tests (e2e, edge, full case) side by side; each one's
+# Repo check and unit tests first, then the browser tests (e2e, edge, gaps, full case, scan) side by side; each one's
 # output goes to $OUT and the tail is shown if it fails. Starts a static server on port 8080 if none is running.
 # The two-phone sync test (tools/test-prewarm-sync.sh) and the rules (tools/test-rules.sh) are run on their own.
 set -u
@@ -16,7 +16,7 @@ node tools/check.mjs || fail=1
 for f in prewarm/test/*.test.mjs; do node "$f" || fail=1; done
 # browser tests in parallel; a hung one is stopped after 10 minutes
 pids=()
-for t in e2e edge.e2e fullcase.e2e scan.e2e scan-live.e2e scan-burst.e2e; do
+for t in e2e edge.e2e gaps.e2e fullcase.e2e scan.e2e scan-live.e2e scan-burst.e2e; do
   timeout -s KILL 600 node "prewarm/test/$t.mjs" >"$OUT/$t.txt" 2>&1 & pids+=("$!:$t")
 done
 for pt in "${pids[@]}"; do

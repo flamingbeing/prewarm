@@ -43,3 +43,15 @@ export function fixtureFiles() {
     'docProps/core.xml': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:creator>Test Author</dc:creator><cp:lastModifiedBy>Test Editor</cp:lastModifiedBy></cp:coreProperties>',
   };
 }
+
+// A second made-up form with the history and discharge rows that carry follow-up questions (for wordform.test.mjs)
+export function fixtureXmlHistory() {
+  const t = tbl([
+    tr([tc(p(run('MEDICAL HISTORY')))]),
+    row('Ischaemic Heart Disease', p(box(), run(' Yes          '), box(), run(' No')), p(run('If yes, previous MI?     '), box(), run(' Yes     '), box(), run(' No'), run('   how long ago? _________'), run('_  years'))),
+    row('Atrial Fibrillation', p(box(), run(' Yes     '), box(), run(' No'))),
+    tr([tc(p(run('DISCHARGE')))]),
+    row('Atrial Fibrillation', p(box(), run(' Yes     '), box(), run(' No'), run('     '), box(), run(' New Onset     '), box(), run(' Existing'))),
+  ]);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document ${W}><w:body>${head()}${t}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1000" w:right="1000" w:bottom="1000" w:left="1000"/></w:sectPr></w:body></w:document>`;
+}

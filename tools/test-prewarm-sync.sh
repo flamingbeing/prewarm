@@ -9,6 +9,6 @@ TOOLS="${RULES_TOOLS:-$HOME/.cache/anawj-rules}"
 cfg="firebase.prewarm-sync.json"
 echo '{ "firestore": { "rules": "prewarm/firestore.rules" }, "emulators": { "firestore": { "port": 8085, "host": "127.0.0.1" }, "auth": { "port": 9099, "host": "127.0.0.1" }, "ui": { "enabled": false } } }' > "$cfg"
 "$TOOLS/node_modules/.bin/firebase" emulators:exec --config "$cfg" --only firestore,auth --project demo-prewarm \
-  "node prewarm/test/sync.emulator.mjs" 2>&1 | grep -E "prewarm sync|Error|FAIL|assert|at file|waiting" ; rc=${PIPESTATUS[0]}
+  "node prewarm/test/sync.emulator.mjs && node prewarm/test/sync-gaps.emulator.mjs" 2>&1 | grep -E "prewarm sync|Error|FAIL|assert|at file|waiting" ; rc=${PIPESTATUS[0]}
 rm -f "$cfg" firebase-debug.log firestore-debug.log
 exit $rc
