@@ -10,7 +10,9 @@ const SDK_FILES = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js
 const KIT = 'https://design.anawj.com/v1/';
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest', 'https://design.anawj.com/v1/tokens.css',
-  'js/app.js', 'js/keypad.js', 'js/schema.js', 'js/headers.js', 'js/store.js', 'js/xlsx.js', 'js/export.js', 'js/cloud.js', 'js/firebase-config.js', 'js/vendor/qrcode.js',
+  'js/app.js', 'js/ui-core.js', 'js/ui-sync.js', 'js/series.js', 'js/ui-home.js', 'js/ui-patient.js', 'js/ui-alerts.js', 'js/ui-data.js', 'js/ui-forms.js',
+  'js/ui-word.js', 'js/ui-pay.js', 'js/ui-settings.js', 'js/ui-share.js', 'js/ui-admin.js', 'js/ui-export.js',
+  'js/keypad.js', 'js/schema.js', 'js/headers.js', 'js/store.js', 'js/xlsx.js', 'js/export.js', 'js/cloud.js', 'js/firebase-config.js', 'js/vendor/qrcode.js',
   'js/docx-fill.js', 'js/wordform.js', 'js/wordview.js', 'js/scan.js', 'js/scan-geom.js', 'js/scan-imports.js', 'js/pay.js', 'js/vendor/jszip.min.js', 'js/vendor/docx-preview.min.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
 ];

@@ -9,6 +9,7 @@ Lasting rules and conventions. Topic detail is in `docs/`:
 How to run and test: [README.md](README.md). Study-day routine: [RUNBOOK.md](RUNBOOK.md). Decisions, plans and status
 are in the owner's private notes.
 
+- **Code map** (ES modules, split from one `app.js` on 22 Oct 2026, like the logbook's): `js/app.js` start-up; `ui-core.js` state, storage, toast, routing (imports no screen; screens call back through `hooks`); `ui-sync.js` sharing and sync; `series.js` readings timing; screens `ui-home`, `ui-patient`, `ui-alerts` (due alerts, complete, sign-off), `ui-data`, `ui-forms`, `ui-word`, `ui-pay`, `ui-settings`, `ui-share`, `ui-admin`, `ui-export`. A new file goes in `sw.js` SHELL.
 - **Public repo:** never commit the eCRF template, the protocol or the paper data collection form (they carry staff
   names). Only the transcribed headers are here. Fake patients only, in tests and demo.
 - **Study IDs only:** the app never asks for names, initials or hospital numbers. The Subject ID is exported in the

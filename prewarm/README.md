@@ -7,8 +7,8 @@ store with a fake patient.
 - **Study-day runbook for the team: `RUNBOOK.md`.** 
 - Lasting rules: `NOTES.md` (topic detail in `docs/`). Plans, decisions and status are in the owner's private notes.
 - `js/headers.js`: the eCRF template's 572 headers and sections, verbatim. `js/schema.js`: every template column as a
-  field, in column order, plus op-day extras the template lacks. `js/app.js`: the screens. `js/store.js`: records with
-  a timestamp per field (merge-ready for sharing). `js/xlsx.js` + `js/export.js`: the Excel export.
+  field, in column order, plus op-day extras the template lacks. `js/app.js` and `js/ui-*.js`: the screens (map in `NOTES.md`).
+  `js/store.js`: records with a timestamp per field (merge-ready for sharing). `js/xlsx.js` + `js/export.js`: the Excel export.
 - Form view: `js/wordform.js` (where each field goes on the paper form v3.2), `js/docx-fill.js` (ticks boxes and types
   into blanks and cells of the Word XML, keeping everything else byte for byte), `js/wordview.js` (download; show with
   vendored docx-preview to print / save as PDF). The blank form is uploaded by an admin, never committed here.
