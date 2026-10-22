@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { WordForm, parseXml, serialize, cleanProps } from '../js/docx-fill.js';
 import { fillForm } from '../js/wordform.js';
-import { fixtureXml, fixtureFiles } from './fixture-form.mjs';
+import { fixtureXml, fixtureXmlHistory, fixtureFiles } from './fixture-form.mjs';
 
 const xml = fixtureXml();
 // untouched, the file comes back byte for byte
@@ -62,5 +62,24 @@ const core = cleanProps(fixtureFiles()['docProps/core.xml']);
 assert.doesNotMatch(core, /Test Author|Test Editor/);
 assert.match(core, /<dc:creator><\/dc:creator>/);
 assert.equal(cleanProps('<Properties><Company>Some Uni</Company><Pages>3</Pages></Properties>'), '<Properties><Company></Company><Pages>3</Pages></Properties>');
+
+// hidden follow-ups stay out of the Word file; switching the parent back brings the stored value back
+{
+  const hist = f => { const r = fillForm(fixtureXmlHistory(), { id: 'h', created: t, f: Object.fromEntries(Object.entries(f).map(([k, v]) => [k, { v, t, by: 'TT' }])) });
+    return { xml: r.xml, text: r.xml.replace(/<[^>]+>/g, ''), ticks: (r.xml.match(/w14:checked w14:val="1"/g) || []).length }; };
+  const years = /how long ago\?\s+7\s+years/;
+  assert.match(hist({ ihd: 1, ihd_mi: 0, ihd_mi_years: 7 }).text, years, 'a shown follow-up is written');
+  const hidden = hist({ ihd: 0, ihd_mi: 0, ihd_mi_years: 7 });
+  assert.doesNotMatch(hidden.text, years, 'parent No: the stored follow-up value is left out');
+  assert.match(hidden.text, /how long ago\? _+/, 'its blank line stays blank');
+  assert.equal(hidden.ticks, 1, 'only the parent No is ticked, not the stored "previous MI" answer');
+  assert.match(hist({ ihd: 1, ihd_mi: 0, ihd_mi_years: 7 }).text, years, 'parent back to Yes: the old value returns');
+  // AF "specify" on discharge: New onset / Existing ticks the matching box, and only when AF is Yes
+  const dcAf = f => hist(f).text.split('DISCHARGE')[1];
+  assert.match(dcAf({ dc_af: 1, dc_af_spec: 'New onset' }), /☒ Yes\s+☐ No\s+☒ New Onset\s+☐ Existing/);
+  assert.match(dcAf({ dc_af: 1, dc_af_spec: 'Existing' }), /☒ Yes\s+☐ No\s+☐ New Onset\s+☒ Existing/);
+  assert.match(dcAf({ dc_af: 0, dc_af_spec: 'New onset' }), /☐ Yes\s+☒ No\s+☐ New Onset\s+☐ Existing/, 'AF No: the stored specify is left out');
+  assert.doesNotMatch(dcAf({ dc_af: 1 }), /☒ (New Onset|Existing)/, 'nothing picked, nothing ticked');
+}
 
 console.log('prewarm wordform: ok');

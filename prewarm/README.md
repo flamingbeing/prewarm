@@ -24,6 +24,7 @@ node prewarm/test/wordform.test.mjs   # filling the Word form (made-up fixture-f
 python3 -m http.server 8080 &   # from the repo root
 node prewarm/test/e2e.mjs        # phone-size browser test with an axe check; SHOTS=<dir> saves screenshots
 node prewarm/test/edge.e2e.mjs   # edge cases (4 at a time; JOBS=1 for one at a time): past midnight, double-tap Save, BP checks, back button
+node prewarm/test/gaps.e2e.mjs   # fixed bugs that had no test: update prompt, typed BMI, wake lock, one banner and three beeps, double taps
 node prewarm/test/fullcase.e2e.mjs  # a whole case per group with a fake clock: nothing left to fill, every op-day cell exported
 tools/test-rules.sh              # Firestore rules in the local emulator
 tools/test-prewarm-sync.sh       # two phones sharing a patient through the local emulators

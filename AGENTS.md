@@ -30,7 +30,7 @@ repo; never copy anything from there into this repo, a PR or an issue (neutral p
 ```
 node tools/check.mjs        # repo checks + Worker tests (CI runs this and the unit tests)
 node tools/proofread.mjs    # page and doc mistakes
-tools/test-prewarm.sh       # unit tests + the six browser tests (~2 min; needs PLAYWRIGHT_PATH, CHROMIUM_PATH)
+tools/test-prewarm.sh       # unit tests + the seven browser tests (~2 min; needs PLAYWRIGHT_PATH, CHROMIUM_PATH)
 tools/test-rules.sh         # Firestore rules in the emulator (needs Java)
 tools/test-prewarm-sync.sh  # two phones through the emulators (needs Java; tools from test-rules.sh)
 ```
