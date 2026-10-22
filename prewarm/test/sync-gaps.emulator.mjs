@@ -92,6 +92,24 @@ try {
     await bb.waitForFunction(() => /34\.1/.test(document.querySelector('.sheet')?.textContent || '') && /36\.8/.test(document.querySelector('.sheet')?.textContent || ''), null, { timeout: 20000 });
   });
 
+  await doneIn('OK on "changed on another phone" saves only the boxes changed here: the other phone\u2019s core stays', async () => {
+    const reading = BASE + `#/p/${id}/prewarm/0`;
+    const enter = async (pg, box, digits) => { await pg.click(`.num[data-type="${box}"]`); await pg.waitForSelector('dialog.kp input.num'); await pg.keyboard.type(digits); await pg.keyboard.press('Enter'); await pg.waitForTimeout(300); };
+    for (const pg of [a, bb]) { await pg.goto(BASE + '#/'); await pg.goto(reading); await pg.waitForSelector('#save'); }
+    const okAll = d => d.accept();
+    bb.on('dialog', okAll); a.on('dialog', okAll);
+    const asked = []; a.on('dialog', d => asked.push(d.message()));
+    await enter(bb, 'core', '370'); await bb.waitForTimeout(800); await bb.click('#save');
+    await serverWait(id, d => d.f?.prewarm_0_core?.v === '37', 'B’s new core 37.0');
+    await a.waitForFunction(() => document.querySelector('#fresh') && !document.querySelector('#fresh').hidden, null, { timeout: 15000 });
+    await enter(a, 'chest', '339'); await a.waitForTimeout(800); await a.click('#save');
+    const d = await serverWait(id, d => d.f?.prewarm_0_chest?.v === '33.9', 'A’s chest 33.9');
+    bb.off('dialog', okAll); a.off('dialog', okAll);
+    assert.ok(asked.some(m => /changed on another phone \(BB\)/.test(m) && /save only the boxes you changed/.test(m)), 'A is asked: ' + JSON.stringify(asked));
+    assert.equal(d.f.prewarm_0_core.v, '37', 'B’s core is not written over by A’s old one');
+    assert.equal(d.f.prewarm_0_core.by, 'BB', 'and is still B’s');
+  });
+
   await doneIn('a wrong join code says "isn’t right" and is not replaced by "Not allowed"', async () => {
     const C = await phone('CC', false);
     await C.page.fill('#code', 'NUH-WRONG123'); await C.page.click('#join');
@@ -186,4 +204,4 @@ try {
   await b.close();
 }
 if (errors.length) { console.error('prewarm sync gaps: FAIL\n- ' + errors.join('\n- ')); process.exit(1); }
-console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, old pending dropped, locked with unsent changes)');
+console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, old pending dropped, locked with unsent changes, OK on a changed reading keeps the other phone\u2019s boxes)');

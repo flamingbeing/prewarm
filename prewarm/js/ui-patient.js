@@ -228,6 +228,7 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
     was[c.key] = prev ? val(p, `${s}_${prev.key}_${c.key}`) : prevPw && c.temp ? val(p, `prewarm_${prevPw.key}_${c.key}`) : null;
     draft[c.key] = mine ?? was[c.key];
   }
+  const openV = { ...draft }; // what each box showed as the screen opened: a box still showing it was not changed here
   let setTouched = false; // gown set temp follows "warming off" until someone picks a value
   const warmTouched = new Set(); // underbody / gown warming follow their logged start time until someone picks
   const isSaved = !!savedAt(p, s, pt.key);
@@ -301,7 +302,9 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
     const theirs = cols.filter(c => (p.f[`${s}_${pt.key}_${c.key}`]?.t || 0) !== openT[c.key]);
     if (theirs.length) {
       const by = p.f[`${s}_${pt.key}_${theirs[0].key}`]?.by;
-      if (!confirm(`The ${pt.label} reading was changed on another phone${by ? ' (' + by + ')' : ''} while you had it open: ${theirs.map(c => `${c.label} ${val(p, `${s}_${pt.key}_${c.key}`) ?? 'blank'}`).join(', ')}.\n\nOK: save yours over it. Cancel: show theirs.`)) { dropDraft(); setLeaveGuard(null); render(); return false; }
+      if (!confirm(`The ${pt.label} reading was changed on another phone${by ? ' (' + by + ')' : ''} while you had it open: ${theirs.map(c => `${c.label} ${val(p, `${s}_${pt.key}_${c.key}`) ?? 'blank'}`).join(', ')}.\n\nOK: save only the boxes you changed. Cancel: show theirs.`)) { dropDraft(); setLeaveGuard(null); render(); return false; }
+      // a box not changed here keeps the other phone's value instead of being written over with this screen's old or blank one
+      for (const c of theirs) if (String(draft[c.key] ?? '') === String(openV[c.key] ?? '')) draft[c.key] = val(p, `${s}_${pt.key}_${c.key}`);
     }
     // saved more than 5 min after it was due (typed in later): ask when it was taken; that time goes on the forms
     let takenAt = nowHM();
