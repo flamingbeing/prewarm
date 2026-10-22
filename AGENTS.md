@@ -24,6 +24,9 @@ repo; never copy anything from there into this repo, a PR or an issue (neutral p
   `SCAN_ACCESS_AUD`, `SCAN_ORIGIN`, `SCAN_CLIENT_ID`, `SCAN_CLIENT_SECRET`) live in the Cloudflare dashboard, never here.
 - Firestore rules are in `prewarm/firestore.rules`; `.github/workflows/deploy-firestore-rules.yml` deploys them
   with its own service account (keyless, GitHub's OIDC sign-in). Run the rules tests before changing them.
+- **App icons** come from anawj-site `tools/app-icons/` (one SVG per app, rendered there): copy its output into each
+  app's `icons/` (`icon-maskable-512.png` is saved as `maskable-512.png`), never redraw here. Each manifest's `id` is
+  fixed (`/`): changing it makes installed copies a different app.
 
 ## Checks before merging
 
