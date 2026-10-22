@@ -21,6 +21,3 @@ Tick one off by adding the test and deleting its row. Tests use fake data only.
 - "A typed temperature goes back in place at once and the screen redraws 0.4 s later": the number pad now saves the box
   and redraws at once (`openCell` in `ui-patient.js`). `gaps.e2e.mjs` checks the outcome that fix was for (a Save tapped
   0.1 s after typing saves on the first tap).
-- "Save asks before writing over a reading changed on another phone": OK there writes the screen's blank boxes over the
-  other phone's value (the test `sync-gaps.emulator.mjs` avoids it by opening the reading after the other phone saved).
-  By design today; worth a look if two phones often chart the same reading.
