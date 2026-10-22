@@ -3,8 +3,8 @@
 Lasting rules, owner preferences and lessons (never task chatter), and how to test. The app's own notes are in
 `prewarm/NOTES.md`.
 
-- Moved from anawj-site on 21 Oct 2026 (repo split, no history). The anawj-site copy of `prewarm/` stays until that
-  repo becomes a landing site; change the app only here.
+- Moved from anawj-site on 21 Oct 2026 (repo split, no history). anawj-site is now the landing site and keeps
+  only the old-address forward in `prewarm/`; change the app only here.
 - Tests import JSZip from `prewarm/js/vendor/jszip.min.js`; `prewarm/js/vendor/package.json` marks that folder as
   CommonJS so Node can load it (this repo's `package.json` says `"type": "module"`).
 - The service worker's SHELL lists the design kit's `tokens.css` by full address; `tools/check.mjs` and
