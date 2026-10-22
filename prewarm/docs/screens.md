@@ -123,7 +123,7 @@ How the patient screen, key times, sign-offs, forms and look work. Part of the n
   pre-op, meds, bloods; tick `sign_periop`, label "Pre-op and patient details"), POD1 (`/data/day1`: chart review,
   analgesia; `sign_pod1`), POD2 (`/data/day2`: chart review, analgesia; `sign_pod2`) and Discharge (`/data/dc`;
   `sign_dc`, split from POD2 on 21 Oct 2026: patients whose POD2 was ticked before then show Discharge unticked).
-  Every section starts open. Questions and order unchanged (`DATA_PARTS` in app.js). Each tick locks only its page;
+  Every section starts open. Questions and order unchanged (`DATA_PARTS` in ui-data.js). Each tick locks only its page;
   "data collection complete" closes none of them. Progress ticks on the list and the export's "Complete: …" columns
   (Extra sheet) have all four.
 - **Thermal Sensation Scale**: the study's original table (scale, words, comments) sits under Save on a pre-warming
