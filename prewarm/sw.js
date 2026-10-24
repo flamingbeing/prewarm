@@ -2,12 +2,16 @@
 // changes: the new worker installs alongside the old one and the app offers "Update available".
 // Firebase (added with sharing) will always go to the network; its SDK files are cached here.
 
-const VERSION = 'prewarm-v80';
+const VERSION = 'prewarm-v81';
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 const SDK_FILES = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map(f => SDK + f);
 // the design kit (tokens.css) comes from another host since the repo split (21 Oct 2026): listed in SHELL by full address
 // and answered from the cache below, so the app keeps its look offline
 const KIT = 'https://design.anawj.com/v1/';
+// the sync engine (app-sync, 24 Oct 2026): an exact version, every module of it, kept with the shell (all or nothing,
+// like the app's own files: without it nothing reaches the team) and answered from the cache (the URL carries the version)
+const SYNC = 'https://core.anawj.com/sync/0.2.0/';
+const SYNC_FILES = ['index.js', ...['sync', 'writes', 'conflict', 'store', 'outbox', 'watchdog', 'persist', 'status', 'firestore'].map(m => `src/${m}.js`)].map(f => SYNC + f);
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest', 'https://design.anawj.com/v1/tokens.css',
   'js/app.js', 'js/ui-core.js', 'js/ui-sync.js', 'js/series.js', 'js/ui-home.js', 'js/ui-patient.js', 'js/ui-alerts.js', 'js/ui-data.js', 'js/ui-forms.js',
@@ -23,6 +27,7 @@ self.addEventListener('install', e => {
   // The Firebase SDK files are fetched from Google and stay optional.
   e.waitUntil(caches.open(VERSION).then(c => Promise.all([
     ...SHELL.map(u => c.add(new Request(u, { cache: 'reload' }))),
+    ...SYNC_FILES.map(u => c.add(new Request(u, { mode: 'cors', cache: 'reload' }))),
     ...SDK_FILES.map(u => c.add(new Request(u, { mode: 'cors' })).catch(() => {})),
   ])));
 });
@@ -44,7 +49,7 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (req.url.startsWith(SDK)) {
+  if (req.url.startsWith(SDK) || req.url.startsWith(SYNC)) {
     // cache first: the URL carries the version
     e.respondWith(caches.open(VERSION).then(async c => (await c.match(req.url)) || fetch(req).then(res => {
       if (res.ok) c.put(req.url, res.clone());

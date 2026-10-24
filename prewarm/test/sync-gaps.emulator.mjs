@@ -20,8 +20,8 @@ const serverWait = async (id, ok, what, ms = 20000) => {
   while (Date.now() < end) { d = await server(id); if (d && ok(d)) return d; await new Promise(r => setTimeout(r, 300)); }
   throw new Error(`waited for the server copy: ${what}; it has ${JSON.stringify(d?.f ? Object.fromEntries(Object.entries(d.f).map(([k, x]) => [k, x.v])) : d)}`);
 };
-const lockOnServer = (id, on) => fetch(`${FS}/patients/${id}?updateMask.fieldPaths=lock&updateMask.fieldPaths=locked`, { method: 'PATCH', headers: OWNER, // what an admin's lock writes
-  body: JSON.stringify({ fields: { locked: { booleanValue: on }, lock: { mapValue: { fields: { on: { booleanValue: on }, t: { integerValue: String(Date.now()) }, by: { stringValue: 'lead@example.com' } } } } } }) });
+const lockOnServer = (id, on) => fetch(`${FS}/patients/${id}?updateMask.fieldPaths=lock&updateMask.fieldPaths=locked&updateMask.fieldPaths=updatedAt`, { method: 'PATCH', headers: OWNER, // what an admin's lock writes (stamped, so phones listening for changes hear it)
+  body: JSON.stringify({ fields: { updatedAt: { integerValue: String(Date.now()) }, locked: { booleanValue: on }, lock: { mapValue: { fields: { on: { booleanValue: on }, t: { integerValue: String(Date.now()) }, by: { stringValue: 'lead@example.com' } } } } } }) });
 
 const b = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] } : {});
 const errors = [];

@@ -2,7 +2,7 @@
 // sign-in); admins sign in with an emailed link. Access is decided by firestore.rules. Demo mode (?demo) never connects.
 //
 //   members/{uid}  { site, initials, code, joinedAt }       codes/{site}  { code, setAt, setBy }   (admins only)
-//   admins/{email} {}                                       patients/{id} { site, created, deleted?, lock?, f: { id: {v,t,by} } }
+//   admins/{email} {}                                       patients/{id} { site, created, updatedAt, id, locked, deleted?, lock?, f: { id: {v,t,by} } }
 //   pacu/{token}   { site, pid, sid, created, f }      (the PACU nurse's link: the token is the secret; see firestore.rules)
 //   shares/{token} { site, pid, sid, created, by }  guests/{uid}_{pid} { token, pid, joinedAt }  (the Share subject link; see firestore.rules)
 //   scanImports/{id} { scan, subject?, createdAt, status, pages, fields: { id: { v, flags, page?, box? } }, reviewedBy?, reviewedAt? }  (Firetop writes, admins read and approve)
@@ -11,8 +11,11 @@
 //                  only admins read, tick and delete the email and PayNow; js/pay.js)
 
 import { FIREBASE_CONFIG } from './firebase-config.js';
+import { mergeShared } from './store.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+// the sync engine (patients): an exact version, precached by sw.js
+const SYNC = 'https://core.anawj.com/sync/0.2.0/index.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -22,16 +25,70 @@ let fb = null, starting = null;
 // one start even when several calls arrive together (a second initializeApp would throw)
 function sdk() { return fb ? Promise.resolve(fb) : (starting ||= start()); }
 async function start() {
-  const [app, auth, fs] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js')]);
+  const [app, auth, fs, sync] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js'), import(SYNC)]);
   const a = app.initializeApp(EMU ? { ...FIREBASE_CONFIG, projectId: 'demo-prewarm' } : FIREBASE_CONFIG);
   let db;
   // keep a copy on the phone so saving works without signal and syncs later
   try { db = fs.initializeFirestore(a, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); }
   catch { db = fs.getFirestore(a); }
-  fb = { auth: auth.getAuth(a), db, A: auth, F: fs };
+  fb = { auth: auth.getAuth(a), db, A: auth, F: fs, S: sync };
   if (EMU) { fs.connectFirestoreEmulator(db, '127.0.0.1', 8085); auth.connectAuthEmulator(fb.auth, 'http://127.0.0.1:9099', { disableWarnings: true }); }
+  engine = makeEngine(fb);
   return fb;
 }
+
+// ---- the sync engine (app-sync, 24 Oct 2026): patients only. Every save goes to an outbox on this phone first, then to
+// the server one at a time, merged there field by field (store.js mergeShared), so a save never waits in Firestore's own
+// queue and is never lost with its cache. Opens listen only for patients changed since the last sync (updatedAt), with
+// a copy of the list on the phone. Members, codes, admins, forms, payments, PACU links and shares stay direct writes.
+let engine = null;
+const listeners = new Set();   // watchPatients callbacks, so the watchdog can start them again
+function makeEngine({ db, F, S, auth }) {
+  const watchdog = S.createWatchdog({
+    // a fresh listener (from this phone's copy: only what changed since) for every open list
+    relisten: async () => { await hub.stopAll(); for (const l of listeners) l.restart(); },
+    cycle: async () => { try { await F.disableNetwork(db); } finally { await F.enableNetwork(db); } },
+    quiet: () => !queue.pending(),
+  });
+  const fs = S.createFirestoreBackend({
+    sdk: async () => ({ db, F }), path: () => ['patients'],
+    // members: their hospital's unlocked patients (the rules refuse anything else); admins (scope ''): all of them
+    where: site => site ? [['site', '==', site], ['locked', '==', false]] : [],
+    merge: { patients: (current, record, _base, ops) => mergeShared(current, record, ops) },
+    onSnapshotMeta: (_coll, meta) => watchdog.heard(meta),
+  });
+  const stores = S.createStores({ prefix: 'prewarm-store:', colls: ['patients'] });
+  // no recycle bin collection; until every patient carries updatedAt (the backfill), opens read in full
+  const hub = S.createSyncHub({ openStore: stores.openStore, listen: fs.listen, fetchOne: fs.fetchOne, bin: null, unstamped: 'full', onError: e => dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })) });
+  S.replanOnWake(hub);
+  const outbox = S.createOutbox({ name: 'prewarm-outbox' });
+  const queue = S.createWriteQueue({
+    store: outbox, getOwner: () => auth.currentUser?.uid || null,
+    backend: (_owner, _kind, record, base, extra) => fs.commit('', 'patients', record, base, extra),
+    online: () => navigator.onLine !== false,
+  });
+  addEventListener('online', () => { queue.kick(); watchdog.event(); });
+  addEventListener('pageshow', () => watchdog.event());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { queue.kick(); watchdog.event(); } });
+  setInterval(() => watchdog.check(), 30000);
+  let persisted = true;
+  S.persistGuard().then(r => { persisted = !r.supported || r.persisted; queue.kick(); });
+  return { hub, queue, stores, watchdog, S, persisted: () => persisted };
+}
+// the write queue's saves for this phone's account (activated once signed in), or null before the engine started
+export async function queue() {
+  const { auth } = await sdk();
+  if (auth.currentUser) await engine.queue.activate(auth.currentUser.uid);
+  return engine.queue;
+}
+// the sync status rules (app-sync status.js): { state, count }, state one of attention, at-risk, offline, saving, stale, synced
+export function status() {
+  if (!engine) return null;
+  const q = engine.queue;
+  return engine.S.syncStatus({ online: navigator.onLine !== false, pending: q.pending(), attention: engine.S.attentionCount(q.entries()), persisted: engine.persisted(), stale: engine.watchdog.stale() });
+}
+// "Refresh now": a moment the phone came back, for the watchdog (listen again if the server went quiet)
+export function nudge() { if (engine) { engine.queue.kick(); engine.watchdog.event(); } }
 
 // Firestore rejects undefined; a JSON round trip drops it
 const plain = o => JSON.parse(JSON.stringify(o));
@@ -103,15 +160,21 @@ export async function leave() {
   await A.signOut(auth);
 }
 
-// Every change sent from this phone has reached the server (false if not within ms: no signal)
+// Every change sent from this phone has reached the server (false if not within ms: no signal): the outbox is empty
+// (in every tab) and Firestore's own writes (members, PACU links, …) are acknowledged
 export async function flushed(ms = 5000) {
   const { db, F } = await sdk();
-  return Promise.race([F.waitForPendingWrites(db).then(() => true), new Promise(ok => setTimeout(() => ok(false), ms))]);
+  const q = await queue();
+  const fsDone = Promise.race([F.waitForPendingWrites(db).then(() => true), new Promise(ok => setTimeout(() => ok(false), ms))]);
+  return (await q.flush(ms)) && await fsDone;
 }
 // Log out: leave the team (or sign out an admin) and delete Firestore's copy of the study data on this phone.
 // The page reloads afterwards (Firestore can't be used again once its copy is cleared).
 export async function logOut() {
   const { db, F } = await sdk();
+  const { hub, queue: q, stores } = engine;
+  // the outbox's saves for this account (the screen warned about unsent ones), the engine's copy of the list, and Firestore's
+  try { await hub.stopAll(); await q.forget(); await stores.wipeStores(); } catch { /* the page reloads; a store left is opened again empty-handed */ }
   try { await leave(); } catch { /* signed out below anyway */ }
   try { await F.terminate(db); await F.clearIndexedDbPersistence(db); } catch { /* cleared on the next start */ }
 }
@@ -154,33 +217,46 @@ export async function setMyPassword(password) {
   await A.updatePassword(auth.currentUser, password);
 }
 
-// Patients of one hospital (or all, for an admin); cb gets the changed records
+// Patients of one hospital (or all, for an admin); cb gets the changed records and meta { server, removed }, removed:
+// patients that left the list (for a member: locked by an admin). The engine hands over its whole list each time; the
+// changes are worked out here, so the screens hear the same as before.
 export async function watchPatients(site, cb, onError) {
-  const { db, F } = await sdk();
-  // members only get their hospital's unlocked patients (the rules refuse anything else); admins get everything
-  const q = site ? F.query(F.collection(db, 'patients'), F.where('site', '==', site), F.where('locked', '==', false)) : F.collection(db, 'patients');
-  // metadata changes too, so the app hears when the phone's copy is confirmed by the server (its "last synced")
-  // removed: patients that left the query (for a member: locked by an admin)
-  return F.onSnapshot(q, { includeMetadataChanges: true }, snap => {
-    const ch = snap.docChanges();
-    cb(ch.filter(c => c.type !== 'removed').map(c => ({ id: c.doc.id, ...c.doc.data() })),
-      { server: !snap.metadata.fromCache && !snap.metadata.hasPendingWrites, removed: ch.filter(c => c.type === 'removed').map(c => c.doc.id) });
-  }, onError);
+  await sdk();
+  const { hub } = engine;
+  let held = new Map(), off = null, stopped = false;
+  const l = {
+    restart() { if (stopped) return; off?.(); off = hub.watch(site || '', 'patients', onList); },
+  };
+  function onList(list, flags) {
+    const next = new Map(list.map(r => [r.id, JSON.stringify(r)]));
+    const changed = list.filter(r => held.get(r.id) !== next.get(r.id)).map(r => ({ ...r }));
+    const removed = [...held.keys()].filter(id => !next.has(id));
+    held = next;
+    cb(changed, { server: !flags.fromCache && !flags.hasPendingWrites, removed });
+  }
+  // the hub reports listener errors (a missing index: failed-precondition; refused: permission-denied) to onError too
+  // a listener that failed is never heard from again: stop the engines, so the next watch (or the watchdog) starts afresh
+  const errs = e => { hub.stopAll().finally(() => onError?.(e.detail)); };
+  window.addEventListener('prewarm-sync-error', errs);
+  listeners.add(l); l.restart();
+  return () => { stopped = true; off?.(); listeners.delete(l); window.removeEventListener('prewarm-sync-error', errs); };
 }
 
-// Send changed fields of a record; merges into the shared copy field by field
+// Send a patient: the whole record goes to this phone's outbox, then to the server, where it is merged with the
+// server's copy field by field (store.js mergeShared). ids: the fields changed (kept with the save). withLock: an
+// admin's lock or unlock. Resolves once the save is stored on this phone (and sent, if that is quick); throws when the
+// server refused it (e.g. locked meanwhile: code permission-denied) or it can't be stored here.
 export async function push(rec, ids, withLock = false) {
-  const { db, F } = await sdk();
-  const f = {};
-  // auto always sent: the merge is deep, so a typed value would otherwise keep an old auto flag and be recalculated over
-  for (const k of ids) if (rec.f[k]) f[k] = { ...rec.f[k], auto: !!rec.f[k].auto };
-  // never send an empty f: merging {} would replace the patient's readings on the server with nothing
-  const body = { site: rec.site, created: rec.created, locked: !!rec.lock?.on };
-  if (Object.keys(f).length) body.f = f;
+  const q = await queue();
+  const { auth } = await sdk();
+  const body = { id: rec.id, site: rec.site, created: rec.created, f: rec.f };
   if (rec.deleted) body.deleted = rec.deleted;
-  // only an admin's lock / unlock sends it (the rules refuse it from anyone else)
-  if (withLock && rec.lock) body.lock = rec.lock;
-  await F.setDoc(F.doc(db, 'patients', rec.id), plain(body), { merge: true });
+  if (rec.lock) body.lock = rec.lock;
+  try { await q.save('patient', auth.currentUser.uid, plain(body), null, { ops: { ids, ...(withLock ? { lock: true } : {}) } }); }
+  catch (e) {
+    const job = q.entries().find(x => x.kind === 'patient' && x.record.id === rec.id);
+    throw Object.assign(new Error(e.message), { code: /locked|permission|insufficient/i.test(job?.error || e.message) ? 'permission-denied' : e.code || 'failed' });
+  }
 }
 
 // The blank paper data collection form (null if none yet). Firestore keeps a copy on the phone for offline use.

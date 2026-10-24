@@ -10,8 +10,13 @@ rules_version = '2';
 //                   removes themselves, so there is always at least one.
 //   codes/{site}    each hospital's join code: { code, setAt, setBy }; only admins read or change it
 // Data:
-//   patients/{id}   { site, created, deleted?, lock?, f: { fieldId: { v, t, by, auto? } } }
+//   patients/{id}   { site, created, updatedAt, id?, deleted?, lock?, locked?, f: { fieldId: { v, t, by, auto? } } }
 //                   members read and write their own hospital's patients; admins all of them.
+//                   updatedAt (ms, the sync engine's stamp, 24 Oct 2026): every write must change it, so phones that
+//                   listen only for what changed since their last sync hear every change (an app version from before
+//                   the engine doesn't stamp: its writes are refused and stay on that phone until it updates).
+//                   id: the document's own id (the engine writes it). Members may read a patient id that doesn't exist
+//                   yet (the engine's transaction reads before it creates).
 //                   lock { on, t, by }: only admins set it; while on, the patient is read only for everyone
 //                   (an admin can only unlock it) and hidden from members altogether. locked (bool) mirrors
 //                   lock.on so members can query `site == X && locked == false` (rules aren't filters).
@@ -181,7 +186,8 @@ service cloud.firestore {
 
     match /patients/{pid} {
       function shape(d) {
-        return d.keys().hasOnly(['site', 'created', 'deleted', 'lock', 'locked', 'f'])
+        return d.keys().hasOnly(['site', 'created', 'deleted', 'lock', 'locked', 'f', 'updatedAt', 'id'])
+          && d.updatedAt is number && d.get('id', pid) == pid
           && d.site in sites() && d.f is map && d.f.size() <= 900
           && d.created is number && (!('deleted' in d) || d.deleted is number)
           && (!('lock' in d) || (d.lock is map && d.lock.keys().hasOnly(['on', 't', 'by'])
@@ -194,14 +200,17 @@ service cloud.firestore {
       allow read: if admin() || (member() && memberSite() == resource.data.site && resource.data.locked == false);
       // a Share subject guest: this one patient only, by its id (never a query), while unlocked
       allow get: if resource.data.locked == false && guestOf(pid, resource.data.site);
+      // a new patient's id, read inside the save's transaction (nothing to show: it doesn't exist)
+      allow get: if resource == null && (member() || admin());
       allow create: if canUse(request.resource.data.site) && shape(request.resource.data)
         && (admin() || !('lock' in request.resource.data));
       allow update: if (canUse(resource.data.site)
           || (guestOf(pid, resource.data.site) && request.resource.data.get('deleted', null) == resource.data.get('deleted', null)))
         && shape(request.resource.data)
         && request.resource.data.site == resource.data.site
+        && request.resource.data.updatedAt != resource.data.get('updatedAt', null)
         && (locked(resource.data)
-          ? admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock', 'locked'])
+          ? admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock', 'locked', 'updatedAt', 'id'])
           : admin() || request.resource.data.get('lock', null) == resource.data.get('lock', null));
       allow delete: if admin();
     }
