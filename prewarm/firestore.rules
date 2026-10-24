@@ -17,9 +17,15 @@ rules_version = '2';
 //                   the engine doesn't stamp: its writes are refused and stay on that phone until it updates).
 //                   id: the document's own id (the engine writes it). Members may read a patient id that doesn't exist
 //                   yet (the engine's transaction reads before it creates).
+//                   serverAt (app-sync 0.3.0 server stamps, 24 Oct 2026): the server's time of the write; when sent it
+//                   must be request.time. Optional until every patient has it (tools/backfill-server-at.mjs) and no
+//                   older app version is left; a later change requires it on every write.
 //                   lock { on, t, by }: only admins set it; while on, the patient is read only for everyone
 //                   (an admin can only unlock it) and hidden from members altogether. locked (bool) mirrors
 //                   lock.on so members can query `site == X && locked == false` (rules aren't filters).
+//   leaves/patient:{id}  a patient an admin locked (app-sync leave entry): { id, kind: 'patient', data: { id, updatedAt },
+//                   deletedAt, site, updatedAt, serverAt? }. Admins write it after the lock; the hospital's team reads
+//                   it, so a phone that was closed while the patient was locked drops it at its next open.
 //   pacu/{token}    the PACU nurse's link: { site, pid, sid, created, f: { fieldId: { v, t, by, auto? } } }. The document id is a
 //                   long random token and is the secret. A member (own hospital) or admin makes and stops it; anyone
 //                   signed in (an anonymous sign-in on the nurse's phone) who knows the token reads it and writes ONLY
@@ -186,8 +192,8 @@ service cloud.firestore {
 
     match /patients/{pid} {
       function shape(d) {
-        return d.keys().hasOnly(['site', 'created', 'deleted', 'lock', 'locked', 'f', 'updatedAt', 'id'])
-          && d.updatedAt is number && d.get('id', pid) == pid
+        return d.keys().hasOnly(['site', 'created', 'deleted', 'lock', 'locked', 'f', 'updatedAt', 'serverAt', 'id'])
+          && d.updatedAt is number && (!('serverAt' in d) || d.serverAt == request.time) && d.get('id', pid) == pid
           && d.site in sites() && d.f is map && d.f.size() <= 900
           && d.created is number && (!('deleted' in d) || d.deleted is number)
           && (!('lock' in d) || (d.lock is map && d.lock.keys().hasOnly(['on', 't', 'by'])
@@ -210,8 +216,21 @@ service cloud.firestore {
         && request.resource.data.site == resource.data.site
         && request.resource.data.updatedAt != resource.data.get('updatedAt', null)
         && (locked(resource.data)
-          ? admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock', 'locked', 'updatedAt', 'id'])
+          ? admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock', 'locked', 'updatedAt', 'serverAt', 'id'])
           : admin() || request.resource.data.get('lock', null) == resource.data.get('lock', null));
+      allow delete: if admin();
+    }
+
+    match /leaves/{lid} {
+      function leaveShape(d) {
+        return d.keys().hasOnly(['id', 'kind', 'data', 'deletedAt', 'site', 'updatedAt', 'serverAt'])
+          && d.id == lid && d.kind == 'patient' && d.data is map && d.data.keys().hasOnly(['id', 'updatedAt'])
+          && d.data.id is string && lid == 'patient:' + d.data.id && d.data.updatedAt is number
+          && d.deletedAt is number && d.updatedAt is number && d.site in sites()
+          && (!('serverAt' in d) || d.serverAt == request.time);
+      }
+      allow read: if admin() || (member() && memberSite() == resource.data.site);
+      allow create, update: if admin() && leaveShape(request.resource.data);
       allow delete: if admin();
     }
   }
