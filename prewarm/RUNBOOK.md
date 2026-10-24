@@ -3,7 +3,7 @@
 One page for the team. Address: **prewarmstudy.anawj.com** (install it to the home screen). Questions: the study lead.
 
 ## Before the case
-1. Open the app with signal. Tap **Update available** at the top if it shows (do this between patients, never mid-case).
+1. Open the app with signal. A new app version loads by itself (the app restarts once); Settings shows the version.
 2. Top bar chip says **Synced** (green). If it says *N waiting*, *N not saved* (red) or *Offline*, tap it: it refreshes and
    says why. *No hospital*: Settings, pick your hospital.
 3. Your initials are set (Settings). On your team (Settings shows the team name).
@@ -19,7 +19,7 @@ One page for the team. Address: **prewarmstudy.anawj.com** (install it to the ho
   defaults carried over and are **not saved**: type the value (or tap it and press OK) to keep it.
 - Alarms only buzz while the app is open and in front. Keep the phone unlocked with the app on screen. A missed buzz
   repeats every 2 minutes for 10 minutes.
-- Don't tap Update available during the case.
+- A new app version restarts the app as soon as it loads, so no app changes are deployed during a case.
 
 ## After the case
 1. Mark each section **complete** (pre-warm, intra-op temps, BP/HR/BIS, intra-op details, PACU), then **Data collection

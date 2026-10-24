@@ -171,8 +171,9 @@ export function pacuLinkHtml(p) {
 }
 
 // Refresh now (owner, 13 Oct 2026): fetch the team's latest data again and look for a new app version
-export let swReg = null, offerUpdate = null;
-export const setSw = (reg, offer) => { swReg = reg; offerUpdate = offer; };
+export let swReg = null, updates = null;
+export const setSw = reg => { swReg = reg; };
+export const setUpdates = p => { updates = p; };   // the update module (register.js), or null when it did not load
 export const refreshHtml = () => `<div class="refreshbox"><button class="secondary" id="refreshnow">Refresh now</button><small class="muted">Gets the team’s latest data again, sends anything waiting, and checks for a new app version. <span id="appver"></span></small><a class="link" href="${UPDATE_HELPER}">App still won’t update? Get the latest version</a></div>`;
 export async function refreshNow(btn) {
   const chip = btn.id === 'syncchip'; // the bar's chip keeps its own text
@@ -189,7 +190,8 @@ export async function refreshNow(btn) {
       await swReg.update().catch(() => {});
       const w = swReg.installing;
       if (w && w.state !== 'installed') await new Promise(ok => { const t = setTimeout(ok, 8000); w.addEventListener('statechange', () => { if (w.state === 'installed' || w.state === 'redundant') { clearTimeout(t); ok(); } }); });
-      if (swReg.waiting && navigator.serviceWorker.controller) { offerUpdate?.(swReg.waiting); msg = 'A new app version is ready: tap “Update available” at the top.'; }
+      // a new version takes over at once and the app reloads by itself (register.js)
+      if (swReg.installing || swReg.waiting) msg = 'A new app version is loading: the app restarts in a moment.';
     }
   } catch { msg = 'Couldn’t refresh. Check your signal and try again.'; }
   btn.disabled = false; if (!chip) btn.textContent = was; else delete btn.dataset.busy; paintSyncChip(); toast(msg);
@@ -198,7 +200,13 @@ export async function refreshNow(btn) {
 // which app version this phone is running (the saved copy's name), so a phone stuck on an old one can be spotted
 export const wireRefresh = () => {
   $('#refreshnow')?.addEventListener('click', e => refreshNow(e.target));
-  const el = $('#appver'); if (el && window.caches) caches.keys().then(ks => { const k = ks.find(x => x.startsWith('prewarm-')); if (k && $('#appver')) { const v = k.replace('prewarm-', ''), d = /^(\d{4}-\d{2}-\d{2})-([0-9a-f]+)$/.exec(v); $('#appver').textContent = 'App version ' + (d ? `${d[1]} (${d[2]})` : v); } }).catch(() => {});
+  const el = $('#appver'); if (!el) return;
+  const label = v => { const w = String(v || '').replace(/^prewarm-/, ''), d = /^(\d{4}-\d{2}-\d{2})-([0-9a-f]{8})$/.exec(w); return w ? 'App version ' + (d ? `${d[1]} (${d[2]})` : w) : ''; };
+  // the running version (register.js asks the service worker); without the module, the newest saved copy's name
+  // (never a 'prewarm-rt-' runtime cache)
+  (updates || Promise.resolve(null)).then(m => (m ? m.version() : null)).catch(() => null)
+    .then(v => v || (window.caches ? caches.keys().then(ks => ks.filter(k => k.startsWith('prewarm-') && !k.startsWith('prewarm-rt-')).sort().at(-1)) : null))
+    .then(v => { const t = label(v); if (t && $('#appver')) $('#appver').textContent = t; }).catch(() => {});
 };
 // one record from the server into this phone's copy; true if the phone's copy changed
 function take(r) {

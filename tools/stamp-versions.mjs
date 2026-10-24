@@ -5,7 +5,11 @@
 // the hash covers, then a hash of every file the app can serve: its whole folder (the service worker serves any
 // same-origin file cache-first and keeps it until VERSION changes, so SHELL alone isn't enough) plus SHELL files
 // outside it. Tests, tools and notes are left out. Without git history the date is today's.
-// Run: node tools/stamp-versions.mjs [--check]   (--check prints the versions without writing)
+// It also writes the sw.js MANIFEST line (app-update): a hash per SHELL file, so a phone fetches only the changed
+// ones. An exact-pin address (a /x.y.z/ in the path) is 'pinned'; another site's /v1/-style address gets this
+// deploy's hash, so it is fetched again on every deploy.
+// Run: node tools/stamp-versions.mjs [--check]   (--check prints the versions without writing, and fails when a
+// SHELL file is missing: the install is all or nothing, so one missing file would stop every phone's update)
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -15,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const write = !process.argv.includes('--check');
 const RE = /const VERSION = '([^']+)'/;
+const MANIFEST_RE = /^const MANIFEST = .*;$/m;
+const sha12 = buf => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
 const lastChanged = files => {
   const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Singapore' });
   try {
@@ -39,11 +45,23 @@ for (const app of fs.readdirSync(ROOT).filter(d => fs.existsSync(path.join(ROOT,
   const shellSrc = sw.match(/const SHELL = \[([\s\S]*?)\];/)?.[1] || '';
   const shell = [...shellSrc.matchAll(/'([^']+)'/g)].map(x => x[1]).filter(f => f !== './' && !/^https?:/.test(f)).map(f => path.join(ROOT, app, f));   // kit files from another host aren't hashed
   const files = [...new Set([...walk(path.join(ROOT, app)).filter(f => f !== swPath), ...shell])].sort();
+  const missing = shell.filter(f => !fs.existsSync(f) || !fs.statSync(f).isFile());
+  if (missing.length) { console.error(`stamp: ${app}/sw.js SHELL lists files that don't exist: ${missing.map(f => path.relative(ROOT, f)).join(', ')}`); process.exitCode = 1; continue; }
+  const plain = sw.replace(RE, `const VERSION = '${base}'`).replace(MANIFEST_RE, 'const MANIFEST = {};');
   const hash = crypto.createHash('sha256');
-  hash.update(sw.replace(RE, `const VERSION = '${base}'`));
+  hash.update(plain);
   for (const f of files) { hash.update('\0' + path.relative(ROOT, f) + '\0'); if (fs.existsSync(f)) hash.update(fs.readFileSync(f)); }
   const h8 = hash.digest('hex').slice(0, 8);
   const version = `${base.replace(/-v\d+$/, '')}-${lastChanged(files)}-${h8}`;
-  if (write) fs.writeFileSync(swPath, sw.replace(RE, `const VERSION = '${version}'`));
+  let out = plain.replace(RE, `const VERSION = '${version}'`);
+  if (MANIFEST_RE.test(plain)) {
+    const manifest = {};
+    for (const u of [...shellSrc.matchAll(/'([^']+)'/g)].map(x => x[1])) {
+      if (/^https?:/.test(u)) manifest[u] = /\/\d+\.\d+\.\d+\//.test(new URL(u).pathname) ? 'pinned' : `deploy-${h8}`;
+      else manifest[u] = sha12(fs.readFileSync(path.join(ROOT, app, u === './' ? 'index.html' : u.split(/[?#]/)[0])));
+    }
+    out = out.replace(MANIFEST_RE, () => `const MANIFEST = ${JSON.stringify(manifest)};`);
+  }
+  if (write) fs.writeFileSync(swPath, out);
   console.log(`${app}: ${version}`);
 }

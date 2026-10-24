@@ -45,7 +45,7 @@ function readyHtml() {
     ['Hospital set', !!(shared.member?.site || settings.site), 'choose it below'],
     ['Nothing waiting or refused', !Object.keys(pending).some(id => patients[id] && !isGone(patients[id])) && !Object.keys(failed).some(id => patients[id] && !isGone(patients[id])), 'tap the chip at the top of a patient for why'],
     ['Synced in the last 15 minutes', !!lastSync && Date.now() - lastSync < 15 * 60e3, 'tap Refresh now below'],
-    ['App is up to date', !swReg?.waiting, 'tap “Update available” at the top'],
+    ['App is up to date', !swReg?.waiting && !swReg?.installing, 'tap Refresh now below: the app restarts on the new version'],
   ];
   const bad = rows.filter(r => !r[1]).length;
   return `<h2>Ready for a case?</h2><ul class="ready" role="list" aria-label="Checks before a case">${rows.map(([l, ok, fix]) => `<li class="${ok ? 'ok' : 'no'}"><span aria-hidden="true">${ok ? '✓' : '✗'}</span><span><b>${esc(l)}</b>${ok ? '' : `<small>${esc(fix)}</small>`}</span></li>`).join('')}</ul>

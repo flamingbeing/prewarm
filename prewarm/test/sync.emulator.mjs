@@ -426,10 +426,10 @@ try {
   const said = [];
   a.on('dialog', d => { said.push(d.message()); said.length === 1 ? d.accept() : d.dismiss(); });
   await a.goto(BASE + '#/settings');
-  // the app version shows the date first (the deploy stamps the saved copy's name 'prewarm-<date>-<hash>')
-  await a.evaluate(() => caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('prewarm-')).map(k => caches.delete(k)))).then(() => caches.open('prewarm-2026-10-14-abcd1234')));
+  // the app version: the running service worker's (the deploy stamps it 'prewarm-<date>-<hash>', shown as 'date (hash)';
+  // unstamped here, 'v<N>'), never a 'prewarm-rt-' runtime cache
   await a.goto(BASE + '#/'); await a.goto(BASE + '#/settings'); await a.waitForSelector('#appver');
-  await a.waitForFunction(() => /App version 2026-10-14 \(abcd1234\)/.test(document.querySelector('#appver')?.textContent || ''), null, { timeout: 5000 });
+  await a.waitForFunction(() => /App version (v\d+|\d{4}-\d{2}-\d{2} \([0-9a-f]{8}\))$/.test(document.querySelector('#appver')?.textContent || ''), null, { timeout: 10000 });
   // Ready for a case?: offline with a patient waiting, those two rows are red and the team rows are green
   await a.waitForSelector('.ready');
   const noRows = await a.$$eval('.ready li.no', l => l.map(x => x.textContent).join('|'));

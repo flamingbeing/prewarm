@@ -323,7 +323,6 @@ main .ptabs a { min-height: 34px; font-size: 15px; }
 
 /* bars and toast */
 .banner { position: fixed; left: 0; right: 0; top: 0; z-index: 8; margin: 0 auto; max-width: 600px; box-shadow: 0 6px 16px rgba(0, 0, 0, .18); background: var(--warn-soft); color: var(--warn); border-bottom: 2px solid var(--warn); font-weight: 700; font-size: 17px; text-align: center; padding: 12px; cursor: pointer; }
-.update { display: block; width: 100%; border: 0; background: var(--info-soft); color: var(--navy); padding: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(10px + env(safe-area-inset-top, 0px)); background: var(--n-ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, .2); max-width: calc(100% - 32px); z-index: 10; pointer-events: none; }
 .sizes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .sizes .chip { padding: 0; font-size: 14px; }
@@ -357,7 +356,7 @@ main .ptabs a { min-height: 34px; font-size: 15px; }
 @media print {
   @page { size: A4; margin: 12mm; }
   body { background: #fff; }
-  .bar, .banner, .update, .toast, .noprint { display: none !important; }
+  .bar, .banner, .toast, .noprint { display: none !important; }
   main { max-width: none; padding: 0; }
   .form { display: block; }
   .fpage { border: 0; padding: 0; break-after: page; overflow: visible; font-size: 9pt; }

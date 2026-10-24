@@ -35,9 +35,10 @@ const open = async (pg, i) => { await pg.locator('a[href*="#/p/"]', { hasText: i
 const preop = async pg => { await pg.click('#haemolink'); await pg.click('.links.three a:has-text("Pre-op")'); await pg.waitForSelector('#f-enrol_id'); };
 const stored = (pg, id, k) => pg.evaluate(([i, k]) => JSON.parse(localStorage.getItem('prewarm-demo:patients'))[i].f[k]?.v ?? null, [id, k]);
 
-// 1. "Update available" asks to save an unsaved reading first (afterAsking). Not in demo mode, so this phone runs the real
-// service worker against a small server of the repo whose sw.js can change version (and skips the design kit, which the
-// test machine may not reach).
+// 1. a new version takes over at once and the app reloads once by itself (app-update, owner 24 Oct 2026: instant, no
+// banner), and the version line shows the running version. Not in demo mode, so this phone runs the real service worker
+// against a small server of the repo whose sw.js can change version (and skips the design kit, which the test machine
+// may not reach). The core (core.anawj.com/update/) must be reachable.
 jobs.push(() => tryit(async () => {
   let swv = 'v-first';
   const srv = http.createServer((req, res) => {
@@ -55,27 +56,30 @@ jobs.push(() => tryit(async () => {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
     const pg = await ctx.newPage();
     pg.on('pageerror', e => fails.push('update: page error: ' + e.message));
-    await pg.goto(url + '?demo'); await pg.waitForTimeout(800);
-    const data = await pg.evaluate(() => localStorage.getItem('prewarm-demo:patients'));
-    await pg.evaluate(d => { localStorage.setItem('prewarm:patients', d); localStorage.setItem('prewarm:settings', JSON.stringify({ me: 'TT' })); }, data);
+    let loads = 0; pg.on('load', () => { loads++; });
     await pg.goto(url); await pg.waitForTimeout(500);
     await pg.evaluate(() => navigator.serviceWorker.ready);
-    await pg.reload(); await pg.waitForTimeout(1000); // now controlled by the first worker
-    await pg.locator('a[href*="#/p/"]', { hasText: 'DEMO-01' }).first().click(); await pg.waitForSelector('#clock');
-    await pg.click('.num[data-type="core"]'); await pg.waitForSelector('dialog.kp input.num');
-    await pg.keyboard.type('372'); await pg.keyboard.press('Enter'); await pg.waitForTimeout(300); // an unsaved core temp
+    await pg.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 15000 });
+    await pg.waitForTimeout(500);
+    log(loads === 1, 'the first install does not reload the page: ' + loads);
     await pg.evaluate(() => { window.__same = 1; });
+    await pg.goto(url + '#/settings'); await pg.waitForSelector('#appver');
+    await pg.waitForFunction(() => /App version v\d+-v-first/.test(document.querySelector('#appver')?.textContent || ''), null, { timeout: 5000 })
+      .then(() => log(true, 'the version line shows the running version'), () => log(false, 'version line: ' + 'missing'));
+    await pg.evaluate(() => { window.__same = 1; });
+    const before = loads;
     swv = 'v-second';
     await pg.evaluate(() => navigator.serviceWorker.getRegistration().then(r => r.update()));
-    await pg.waitForSelector('#update:not([hidden])', { timeout: 15000 });
-    await pg.click('#update'); await pg.waitForTimeout(500);
-    log(!!await pg.$('dialog.ask[open]'), 'Update with an unsaved reading asks first');
-    log(await pg.evaluate(() => window.__same) === 1, 'the page was not reloaded before the answer');
-    await pg.click('dialog.ask [data-a="stay"]'); await pg.waitForTimeout(500);
-    log(await pg.evaluate(() => window.__same) === 1 && /37\.2/.test(await pg.textContent('.num[data-type="core"]')), 'Stay keeps the page and the typed reading');
-    await pg.click('#update'); await pg.waitForSelector('dialog.ask[open]');
-    await pg.click('dialog.ask [data-a="drop"]');
-    await pg.waitForFunction(() => window.__same === undefined, null, { timeout: 15000 }).catch(() => log(false, 'after Don’t save the update reloaded the app'));
+    await pg.waitForFunction(() => window.__same === undefined, null, { timeout: 15000 }).then(() => log(true, 'a new version reloads the app by itself'), () => log(false, 'a new version reloads the app by itself'));
+    await pg.waitForTimeout(2500);
+    log(loads === before + 1, 'exactly one reload per take-over: ' + (loads - before));
+    await pg.waitForSelector('#appver');
+    await pg.waitForFunction(() => /v-second/.test(document.querySelector('#appver')?.textContent || ''), null, { timeout: 5000 })
+      .then(() => log(true, 'the new version runs'), async () => log(false, 'the new version runs: ' + await pg.textContent('#appver')));
+    // offline: the app still opens from the saved copy
+    await ctx.setOffline(true);
+    await pg.reload(); await pg.waitForSelector('a[href="#/settings"], #appver', { timeout: 10000 }).then(() => log(true, 'offline: the app opens'), () => log(false, 'offline: the app opens'));
+    await ctx.setOffline(false);
     await ctx.close();
   } finally { srv.close(); }
 }));
@@ -311,4 +315,4 @@ jobs.push(() => tryit(async () => {
 await runJobs();
 await b.close();
 if (fails.length) { console.error('prewarm gaps: FAIL\n- ' + fails.join('\n- ')); process.exit(1); }
-console.log('prewarm gaps: ok (update prompt, typed BMI, screen-awake lock, emptied time pad, one banner and three beeps, sound resume, delete double tap, comfort second tap, Subject ID kept, saved by, Underbody default, hidden answers back, Back commits, Save right after typing, double-tap comfort)');
+console.log('prewarm gaps: ok (instant update, typed BMI, screen-awake lock, emptied time pad, one banner and three beeps, sound resume, delete double tap, comfort second tap, Subject ID kept, saved by, Underbody default, hidden answers back, Back commits, Save right after typing, double-tap comfort)');
