@@ -3,8 +3,8 @@
 // shell, and the first screen.
 import { isGone } from './store.js';
 import * as cloud from './cloud.js';
-import { $, DEMO, NS, afterAsking, esc, leaveGuard, patients, render, settings, shared } from './ui-core.js';
-import { pending, setSw, sharing } from './ui-sync.js';
+import { $, DEMO, NS, esc, patients, render, settings, shared } from './ui-core.js';
+import { pending, setSw, setUpdates, sharing, swReg } from './ui-sync.js';
 import './series.js';
 import './ui-home.js';
 import './ui-patient.js';
@@ -63,45 +63,15 @@ async function moveCheck() {
 }
 if (ON_OLD_ADDRESS) setTimeout(moveCheck, 1500);
 
-// ---------- offline shell and updates
+// ---------- offline shell and updates: the shared update module (app-update)
+// A new version installs in the background and takes over at once; the page reloads once (register.js; the owner chose
+// instant updates, 24 Oct 2026, so a half-typed reading is not waited for). The browser looks for a new version on every
+// return to the front and every 3 h while open, and Refresh now asks too. Loaded with import() so a blocked
+// core.anawj.com never stops the app; offline it comes from the saved copy (sw.js SHELL).
 if ('serviceWorker' in navigator && !DEMO) {
-  navigator.serviceWorker.register('sw.js').then(reg => {
-    // updating reloads the app: an unsaved reading on screen is asked about first
-    // the waiting worker may have been replaced by a newer one since the banner showed (several updates in a row), so ask the
-    // current one; if nothing takes over in 3 s (Firefox did not), clear the saved copy of the app (never the patients) and reload
-    const offer = w => { const b = $('#update'); b.hidden = false; b.onclick = () => afterAsking(() => {
-      b.hidden = true;
-      (reg.waiting || w).postMessage('skipWaiting');
-      setTimeout(async () => {
-        if (reloaded || !navigator.onLine) return;
-        // only wipe the saved copy if the network really answers now (14 Oct 2026): a phone whose signal dropped in these
-        // 3 seconds would otherwise have no app at all offline
-        try { if (!(await fetch('sw.js', { cache: 'no-store' })).ok) return; } catch { return; }
-        try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); for (const k of await caches.keys()) if (k.startsWith('prewarm-')) await caches.delete(k); } catch { /* reload anyway */ }
-        location.reload();
-      }, 3000);
-    }); };
-    setSw(reg, offer);
-    if (reg.waiting) offer(reg.waiting);
-    reg.addEventListener('updatefound', () => { const w = reg.installing; w?.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); }); });
-    // a phone keeps the app open for hours, and the browser only looks for a new version when the page is opened:
-    // look again when the app comes back to the front, when signal returns, and every 10 minutes (owner, 13 Oct 2026)
-    const look = () => { if (document.visibilityState === 'hidden') return; reg.update().catch(() => {}); if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting); };
-    document.addEventListener('visibilitychange', look);
-    addEventListener('online', look);
-    setInterval(look, 10 * 60e3);
-    look();
-  }).catch(() => {});
-  // reload only when an update takes over, not when the first install claims the page (that wiped a half-filled form)
-  const hadController = !!navigator.serviceWorker.controller;
-  let reloaded = false;
-  const reload = () => { reloaded = true; location.reload(); };
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController || reloaded) return;
-    // another tab took the update while a reading is half-entered here: wait for a tap rather than lose it
-    if (leaveGuard?.()) { const b = $('#update'); b.hidden = false; b.onclick = () => afterAsking(reload); }
-    else reload();
-  });
+  setUpdates(import('https://core.anawj.com/update/0.1.0/register.js')
+    .then(async m => { setSw(await m.register({ app: 'prewarm', sw: 'sw.js' })); addEventListener('online', () => swReg?.update().catch(() => {})); return m; })
+    .catch(() => null));
 }
 
 render();
