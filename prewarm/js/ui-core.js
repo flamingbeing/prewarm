@@ -97,7 +97,8 @@ export const sid = p => val(p, 'enrol_id') || 'New patient';
 // "Subject ID: 85" wherever a patient is named on screen (owner, 13 Oct 2026)
 export const sidL = p => 'Subject ID: ' + sid(p);
 // ---------- sharing (ui-sync.js keeps it up to date)
-export const shared = { member: null, admin: false, email: '', uid: null, unwatch: null, stale: false };
+// joining: a join is on its way; it sets member and starts watching itself (ui-settings joinTeam, ui-sync onUser)
+export const shared = { member: null, admin: false, email: '', uid: null, unwatch: null, stale: false, joining: false };
 let toastTimer;
 export function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2600); }
 // ---------- routing

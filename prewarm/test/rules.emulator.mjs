@@ -291,7 +291,8 @@ await t('admin deletes the entry', assertSucceeds(deleteDoc(payDoc(adm))));
 await t('a new patient with serverAt = the server time', assertSucceeds(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: serverTimestamp() })));
 await t('a save with serverAt = the server time', assertSucceeds(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: serverTimestamp(), f: { x: { v: 1, t: 30, by: 'AB' } } })));
 await t('an older app version still saves without serverAt', assertSucceeds(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', f: { x: { v: 2, t: 31, by: 'AB' } } })));
-await t('serverAt from the phone clock is refused', assertFails(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: Timestamp.fromMillis(Date.now()) })));
+// a phone clock a minute behind (Date.now() itself could land on the server's very millisecond: then it is the server time)
+await t('serverAt from the phone clock is refused', assertFails(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: Timestamp.fromMillis(Date.now() - 60000) })));
 await t('serverAt as a number is refused', assertFails(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: Date.now() })));
 const SL = (on, t) => ({ updatedAt: U(), serverAt: serverTimestamp(), locked: on, lock: { on, t, by: ADMIN } });
 await t('admin locks with serverAt', assertSucceeds(setDoc(doc(adm, 'patients', 's1'), SL(true, 40), { merge: true })));

@@ -36,10 +36,14 @@ function fromOutbox() {
     if (x.state === 'pending') p[x.record.id] = true;
     else if ((x.state === 'failed' || x.state === 'conflict') && !(x.record.id in f)) f[x.record.id] = why(x.error);
   }
-  const was = Object.keys(pending).length;
+  const was = Object.keys(pending).length, before = unsentIds();
   pending = p; failed = f;
   if (was && !Object.keys(p).length && heard) synced(); else showSync();
+  // the list's "Not sent yet" / "Not saved to the team" lines follow the outbox, not only the sync line: a send that
+  // brought nothing new from the server (e.g. resyncOnce on a phone that just joined) left the line up (24 Oct 2026)
+  if (unsentIds() !== before && (location.hash.slice(1) || '/') === '/') redraw();
 }
+const unsentIds = () => Object.keys(pending).sort() + '|' + Object.keys(failed).sort();
 const setFailed = (id, reason) => { if (reason) appFailed[id] = reason; else if (id in appFailed) delete appFailed[id]; else return; write('failed', appFailed); fromOutbox(); };
 let heard = false;   // the team's list has come from the server since this page opened
 // when this phone was last fully in step with the server (nothing waiting to send, team's changes received)
@@ -232,7 +236,11 @@ function redraw() {
   else { shared.stale = true; const b = $('#fresh'); if (b) b.hidden = false; }
 }
 let guestSubs = [];
+// watch() runs from sign-in (onUser) and from the join at once: only the newest call keeps its listener and reports.
+// An older one, started before the join reached the server, was refused and showed "Not allowed" (24 Oct 2026)
+let watchGen = 0;
 export async function watch() {
+  const gen = ++watchGen;
   shared.unwatch?.(); shared.unwatch = null;
   for (const u of guestSubs) u?.(); guestSubs = [];
   for (const u of pacuSubs.values()) u?.(); pacuSubs.clear();
@@ -241,13 +249,15 @@ export async function watch() {
   if (!team()) return;
   const seen = new Set();
   let healedAll = false;
-  shared.unwatch = await cloud.watchPatients(shared.admin ? null : shared.member.site, (list, meta) => {
+  const unwatch = await cloud.watchPatients(shared.admin ? null : shared.member.site, (list, meta) => {
+    if (gen !== watchGen) return;
     let changed = false;
     // a member's phone: a patient locked by an admin leaves the team's query, so it goes from this phone, unless it
-    // has changes the server never took: then it stays here (export it, ask the admin to unlock)
+    // has changes the server never took (waiting, or already refused by the lock): then it stays here (export it, ask
+    // the admin to unlock). Refused ones were dropped with their changes when only waiting ones counted (24 Oct 2026)
     if (!shared.admin) for (const id of meta.removed || []) {
       if (!patients[id]) continue;
-      if (pending[id]) { toast(`${sid(patients[id])} was locked by the study admin before your last changes reached the team. They stay on this phone: ask the admin to unlock it.`); continue; }
+      if (pending[id] || failed[id]) { toast(`${sid(patients[id])} was locked by the study admin before your last changes reached the team. They stay on this phone: ask the admin to unlock it.`); continue; }
       delete patients[id]; changed = true;
     }
     for (const r of list) { seen.add(r.id); if (take(r)) changed = true; }
@@ -265,11 +275,13 @@ export async function watch() {
     watchPacu();
     if (changed) redraw();
   }, async e => {
+    if (gen !== watchGen) return;
     // refused right after a wrong join code (the phone's own copy of the refused join made it look like a member):
     // check with the server; not a member means just stop listening, the join screen already said why
-    if (e?.code === 'permission-denied' && !shared.admin && !(await cloud.member())) { shared.member = null; shared.unwatch?.(); shared.unwatch = null; return; }
-    toast(cloud.friendly(e));
+    if (e?.code === 'permission-denied' && !shared.admin && !(await cloud.member())) { if (gen === watchGen) { shared.member = null; shared.unwatch?.(); shared.unwatch = null; } return; }
+    if (gen === watchGen) toast(cloud.friendly(e));
   });
+  if (gen === watchGen) shared.unwatch = unwatch; else unwatch?.();
 }
 // each subject opened from a Share subject link, one by one (a guest can't ask for a list). The link stopped or the
 // subject locked: refused, so the subject leaves this phone (unless it holds changes the server never took)
@@ -330,7 +342,10 @@ if (cloud.enabled && cloud.isAdminLink()) {
 let unOutbox = null;
 if (cloud.enabled) cloud.onUser(async u => {
   const before = sharing();
-  shared.member = u ? await cloud.member() : null;
+  // a join signs in, so this runs while the join is on its way: the join sets the member and starts watching. Read here,
+  // a refused join's copy on the phone looked like a member: its listener was refused, the right code's next one then
+  // heard nothing until the watchdog, or a read from before the join undid it (24 Oct 2026)
+  if (!shared.joining) shared.member = u ? await cloud.member() : null;
   shared.admin = u && !u.isAnonymous ? await cloud.isAdmin() : false;
   shared.email = u?.email || '';
   shared.uid = u?.uid || null;
@@ -339,7 +354,7 @@ if (cloud.enabled) cloud.onUser(async u => {
   if (u) { outbox = await cloud.queue(); unOutbox = outbox.onChange(fromOutbox); fromOutbox(); }
   if (shared.member) { settings.site = shared.member.site; if (!settings.me && shared.member.initials) settings.me = shared.member.initials; saveSettings(); }
   uploadLocal();
-  await watch();
+  if (!shared.joining) await watch();
   // changes held over from an earlier visit: the first word from the server sends again anything still newer (watch)
   document.body.dataset.cloud = 'ready';
   // redraw only when sharing changed, so a half-typed join code isn't wiped

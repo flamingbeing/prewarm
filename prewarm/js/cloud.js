@@ -271,7 +271,10 @@ export async function watchPatients(site, cb, onError) {
 export async function push(rec, ids, withLock = false) {
   const q = await queue();
   const { auth } = await sdk();
-  const body = { id: rec.id, site: rec.site, created: rec.created, f: rec.f };
+  // every field says whether it was worked out (auto) or typed: a typed BMI sent without auto: false kept the server's
+  // old auto: true, and other phones then worked it out again over the typed one
+  const f = Object.fromEntries(Object.entries(rec.f || {}).map(([k, x]) => [k, x && typeof x === 'object' ? { ...x, auto: !!x.auto } : x]));
+  const body = { id: rec.id, site: rec.site, created: rec.created, f };
   if (rec.deleted) body.deleted = rec.deleted;
   if (rec.lock) body.lock = rec.lock;
   try { await q.save('patient', auth.currentUser.uid, plain(body), null, { ops: { ids, ...(withLock ? { lock: true } : {}) } }); }
