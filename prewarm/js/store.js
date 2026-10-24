@@ -100,3 +100,25 @@ export function restore(rec, by, now = Date.now()) {
 
 // deleted, and not restored since (a restore is the field "restored": its time is after the delete)
 export const isGone = p => !!p.deleted && p.deleted > (p.f?.restored?.t || 0);
+
+// The team's copy of a patient, merged on the server when a save from this phone is sent (the sync engine runs it
+// inside a transaction on the server's current copy, so nothing another phone saved meanwhile is overwritten): the
+// newest of each field wins, the latest delete wins. Only a study admin's lock or unlock (ops { lock: true }) changes
+// lock; anyone else keeps the server's (the rules refuse a change). A locked patient: an admin's save changes only the
+// lock, anyone else's is refused. -> the document to write ({ site, created, locked, f, deleted?, lock? })
+export function mergeShared(current, record, ops = []) {
+  const admin = (ops || []).some(o => o && o.lock);
+  const body = r => ({ site: r.site, created: r.created, f: r.f || {}, ...(r.deleted ? { deleted: r.deleted } : {}), ...(r.lock ? { lock: r.lock } : {}) });
+  const done = d => { d.locked = !!d.lock?.on; return d; };
+  if (!current) { const d = body(record); if (!admin) delete d.lock; return done(d); }
+  const cur = body(current);
+  if (cur.lock?.on) {
+    if (!admin) throw Object.assign(new Error('This patient is locked by the study admin'), { code: 'permission-denied' });
+    if (record.lock && record.lock.t > cur.lock.t) cur.lock = record.lock;
+    return done(cur);
+  }
+  const { rec } = mergeRecord(cur, body(record));
+  if (!admin) { if (cur.lock) rec.lock = cur.lock; else delete rec.lock; }
+  rec.site = cur.site;
+  return done(rec);
+}

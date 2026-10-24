@@ -1,7 +1,7 @@
 // Firestore rules checks for prewarm/firestore.rules against the local emulator (fake accounts, demo project only).
 // Run with tools/test-rules.sh (it starts the emulator and runs this from prewarm/).
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, getDocs, collection, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, getDocs, collection, query, where, runTransaction } from 'firebase/firestore';
 import fs from 'node:fs';
 const env = await initializeTestEnvironment({ projectId: 'demo-prewarm', firestore: { rules: fs.readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8085 } });
 const ADMIN = 'lead@example.com';
@@ -12,14 +12,17 @@ await env.withSecurityRulesDisabled(async ctx => {
   await setDoc(doc(db, 'admins', ADMIN), { name: 'Lead' });
   await setDoc(doc(db, 'codes', 'NUH'), { code: 'NUH-CODE-1', setAt: 1, setBy: ADMIN });
   await setDoc(doc(db, 'codes', 'SGH'), { code: 'SGH-CODE-1', setAt: 1, setBy: ADMIN });
-  await setDoc(doc(db, 'patients', 'sgh1'), { site: 'SGH', created: 1, f: {} });
+  await setDoc(doc(db, 'patients', 'sgh1'), { updatedAt: 1, site: 'SGH', created: 1, f: {} });
 });
 let n = 0, fail = 0;
 async function t(name, p) { n++; try { await p; } catch (e) { fail++; console.log('FAIL', name, e.message.slice(0, 200)); } }
 const adm = google(ADMIN), stranger = google('someone@example.com'), unv = google(ADMIN, false);
 const a = anonUser('phoneA'), b = anonUser('phoneB'), c = anonUser('phoneC'), nobody = env.unauthenticatedContext().firestore();
 const join = (db, uid, site, code, extra = {}) => setDoc(doc(db, 'members', uid), { site, initials: 'AB', code, joinedAt: 1, ...extra });
-const pat = (site, f = {}) => ({ site, created: 1, locked: false, f });
+// every patient write changes updatedAt (the sync engine's stamp, 24 Oct 2026): U() is a new stamp each time
+let stampN = 1000;
+const U = () => ++stampN;
+const pat = (site, f = {}) => ({ site, created: 1, locked: false, f, updatedAt: U() });
 
 // joining
 await t('join with the right code', assertSucceeds(join(a, 'phoneA', 'NUH', 'NUH-CODE-1')));
@@ -42,17 +45,17 @@ await t('member cannot set a code', assertFails(setDoc(doc(a, 'codes', 'NUH'), {
 
 // patients
 await t('member creates own-hospital patient', assertSucceeds(setDoc(doc(a, 'patients', 'p1'), pat('NUH', { enrol_id: { v: 'S-01', t: 1, by: 'AB' } }))));
-await t('member merges a reading', assertSucceeds(setDoc(doc(a, 'patients', 'p1'), { f: { prewarm_0_core: { v: '36.6', t: 2, by: 'AB' } } }, { merge: true })));
-await t('member soft-deletes', assertSucceeds(setDoc(doc(a, 'patients', 'p1'), { deleted: 5 }, { merge: true })));
+await t('member merges a reading', assertSucceeds(setDoc(doc(a, 'patients', 'p1'), { updatedAt: U(), f: { prewarm_0_core: { v: '36.6', t: 2, by: 'AB' } } }, { merge: true })));
+await t('member soft-deletes', assertSucceeds(setDoc(doc(a, 'patients', 'p1'), { updatedAt: U(), deleted: 5 }, { merge: true })));
 await t('member cannot create other-hospital patient', assertFails(setDoc(doc(a, 'patients', 'p2'), pat('SGH'))));
-await t('member cannot move a patient', assertFails(setDoc(doc(a, 'patients', 'p1'), { site: 'SGH' }, { merge: true })));
+await t('member cannot move a patient', assertFails(setDoc(doc(a, 'patients', 'p1'), { updatedAt: U(), site: 'SGH' }, { merge: true })));
 await t('member cannot read other hospital', assertFails(getDoc(doc(a, 'patients', 'sgh1'))));
-await t('member cannot write other hospital', assertFails(setDoc(doc(a, 'patients', 'sgh1'), { f: { x: { v: 1 } } }, { merge: true })));
+await t('member cannot write other hospital', assertFails(setDoc(doc(a, 'patients', 'sgh1'), { updatedAt: U(), f: { x: { v: 1 } } }, { merge: true })));
 await t('member lists own hospital', assertSucceeds(getDocs(query(collection(a, 'patients'), where('site', '==', 'NUH'), where('locked', '==', false)))));
 await t('member cannot list everything', assertFails(getDocs(collection(a, 'patients'))));
 await t('member cannot hard-delete', assertFails(deleteDoc(doc(a, 'patients', 'p1'))));
 await t('unknown patient field', assertFails(setDoc(doc(a, 'patients', 'p3'), { ...pat('NUH'), name: 'Real Person' })));
-await t('f must be a map', assertFails(setDoc(doc(a, 'patients', 'p3'), { site: 'NUH', created: 1, f: 'x' })));
+await t('f must be a map', assertFails(setDoc(doc(a, 'patients', 'p3'), { updatedAt: U(), site: 'NUH', created: 1, f: 'x' })));
 await t('non-member cannot read', assertFails(getDoc(doc(b, 'patients', 'p1'))));
 await t('signed out cannot read', assertFails(getDoc(doc(nobody, 'patients', 'p1'))));
 await t('stranger Google account cannot read', assertFails(getDoc(doc(stranger, 'patients', 'p1'))));
@@ -70,25 +73,42 @@ await t('code for unknown hospital', assertFails(setDoc(doc(adm, 'codes', 'XYZ')
 await t('admin lists members', assertSucceeds(getDocs(collection(adm, 'members'))));
 await t('admin reads all patients', assertSucceeds(getDocs(collection(adm, 'patients'))));
 // locking (admins only; a locked patient can't be changed by members)
-const L = (on, t = 10) => ({ lock: { on, t, by: ADMIN }, locked: on });
+const L = (on, t = 10) => ({ lock: { on, t, by: ADMIN }, locked: on, updatedAt: U() });
 await t('member creates p4', assertSucceeds(setDoc(doc(a, 'patients', 'p4'), pat('NUH'))));
 await t('member cannot lock', assertFails(setDoc(doc(a, 'patients', 'p4'), L(true), { merge: true })));
 await t('member cannot create a locked patient', assertFails(setDoc(doc(a, 'patients', 'p5'), { ...pat('NUH'), ...L(true) })));
 await t('admin locks', assertSucceeds(setDoc(doc(adm, 'patients', 'p4'), L(true), { merge: true })));
-await t('member cannot write a locked patient', assertFails(setDoc(doc(a, 'patients', 'p4'), { f: { x: { v: 1, t: 11, by: 'AB' } } }, { merge: true })));
+await t('member cannot write a locked patient', assertFails(setDoc(doc(a, 'patients', 'p4'), { updatedAt: U(), f: { x: { v: 1, t: 11, by: 'AB' } } }, { merge: true })));
 await t('member cannot unlock', assertFails(setDoc(doc(a, 'patients', 'p4'), L(false, 12), { merge: true })));
 await t('member cannot read a locked patient', assertFails(getDoc(doc(a, 'patients', 'p4'))));
 await t('member query for unlocked patients', assertSucceeds(getDocs(query(collection(a, 'patients'), where('site', '==', 'NUH'), where('locked', '==', false)))));
 await t('member query never returns a locked patient', getDocs(query(collection(a, 'patients'), where('site', '==', 'NUH'))).then(r => { if (r.docs.some(d => d.id === 'p4')) throw new Error('locked patient returned'); }, () => {}));
 await t('admin reads a locked patient', assertSucceeds(getDoc(doc(adm, 'patients', 'p4'))));
-await t('locked must match lock.on', assertFails(setDoc(doc(adm, 'patients', 'p4'), { locked: false }, { merge: true })));
+await t('locked must match lock.on', assertFails(setDoc(doc(adm, 'patients', 'p4'), { updatedAt: U(), locked: false }, { merge: true })));
 await t('member cannot mark locked without a lock', assertFails(setDoc(doc(a, 'patients', 'p6'), { ...pat('NUH'), locked: true })));
-await t('lock must be { on, t, by }', assertFails(setDoc(doc(adm, 'patients', 'p4'), { lock: { on: 'yes', t: 1, by: ADMIN } }, { merge: true })));
-await t('admin cannot change a locked patient either', assertFails(setDoc(doc(adm, 'patients', 'p4'), { f: { x: { v: 9, t: 12, by: 'L' } } }, { merge: true })));
+await t('lock must be { on, t, by }', assertFails(setDoc(doc(adm, 'patients', 'p4'), { updatedAt: U(), lock: { on: 'yes', t: 1, by: ADMIN } }, { merge: true })));
+await t('admin cannot change a locked patient either', assertFails(setDoc(doc(adm, 'patients', 'p4'), { updatedAt: U(), f: { x: { v: 9, t: 12, by: 'L' } } }, { merge: true })));
 await t('admin unlocks', assertSucceeds(setDoc(doc(adm, 'patients', 'p4'), L(false, 13), { merge: true })));
 await t('member reads it again once unlocked', assertSucceeds(getDoc(doc(a, 'patients', 'p4'))));
-await t('member writes again once unlocked', assertSucceeds(setDoc(doc(a, 'patients', 'p4'), { f: { x: { v: 2, t: 14, by: 'AB' } } }, { merge: true })));
-await t('admin writes any hospital', assertSucceeds(setDoc(doc(adm, 'patients', 'sgh1'), { f: { x: { v: 1, t: 1, by: 'L' } } }, { merge: true })));
+await t('member writes again once unlocked', assertSucceeds(setDoc(doc(a, 'patients', 'p4'), { updatedAt: U(), f: { x: { v: 2, t: 14, by: 'AB' } } }, { merge: true })));
+await t('admin writes any hospital', assertSucceeds(setDoc(doc(adm, 'patients', 'sgh1'), { updatedAt: U(), f: { x: { v: 1, t: 1, by: 'L' } } }, { merge: true })));
+// the sync engine (24 Oct 2026): stamps, its own id, and the transaction's read before a create
+await t('a patient write without updatedAt is refused', assertFails(setDoc(doc(a, 'patients', 'p1'), { f: { x: { v: 3, t: 20, by: 'AB' } } }, { merge: true })));
+await t('a new patient without updatedAt is refused', assertFails(setDoc(doc(a, 'patients', 'p7'), { site: 'NUH', created: 1, locked: false, f: {} })));
+await t('an update that keeps the old updatedAt is refused (an old app version)', getDoc(doc(adm, 'patients', 'p1')).then(d => assertFails(setDoc(doc(a, 'patients', 'p1'), { updatedAt: d.data().updatedAt, f: { x: { v: 4, t: 21, by: 'AB' } } }, { merge: true }))));
+await t('updatedAt must be a number', assertFails(setDoc(doc(a, 'patients', 'p1'), { updatedAt: 'now', f: {} }, { merge: true })));
+await t('the engine writes the whole patient with its id', assertSucceeds(setDoc(doc(a, 'patients', 'p8'), { ...pat('NUH'), id: 'p8' })));
+await t('…but not another id', assertFails(setDoc(doc(a, 'patients', 'p9'), { ...pat('NUH'), id: 'p1' })));
+await t('a member reads a patient id that does not exist yet', assertSucceeds(getDoc(doc(a, 'patients', 'new-one'))));
+await t('a stranger cannot', assertFails(getDoc(doc(b, 'patients', 'new-one'))));
+await t('a member creates through a transaction (read first)', assertSucceeds(runTransaction(a, async tx => {
+  const s = await tx.get(doc(a, 'patients', 'p10')); if (s.exists()) throw new Error('exists');
+  tx.set(doc(a, 'patients', 'p10'), { ...pat('NUH'), id: 'p10' });
+})));
+await t('a member updates through a transaction', assertSucceeds(runTransaction(a, async tx => {
+  const s = await tx.get(doc(a, 'patients', 'p10'));
+  tx.set(doc(a, 'patients', 'p10'), { ...s.data(), f: { x: { v: 1, t: 5, by: 'AB' } }, updatedAt: U() });
+})));
 await t('admin removes a member', assertSucceeds(deleteDoc(doc(adm, 'members', 'phoneC'))));
 await t('removed member loses access', assertFails(getDoc(doc(c, 'patients', 'sgh1'))));
 // managing admins: any admin adds (lower-case email, addedBy themselves) or removes another; nobody removes themselves
@@ -163,7 +183,7 @@ await env.withSecurityRulesDisabled(async ctx => {
   const db = ctx.firestore();
   await setDoc(doc(db, 'patients', 'g1'), pat('NUH', { enrol_id: { v: 'S-07', t: 1, by: 'AB' } }));
   await setDoc(doc(db, 'patients', 'g2'), pat('NUH'));
-  await setDoc(doc(db, 'patients', 'g3'), { site: 'NUH', created: 1, locked: true, lock: { on: true, t: 1, by: ADMIN }, f: {} });
+  await setDoc(doc(db, 'patients', 'g3'), { updatedAt: U(), site: 'NUH', created: 1, locked: true, lock: { on: true, t: 1, by: ADMIN }, f: {} });
 });
 const share = (extra = {}) => ({ site: 'NUH', pid: 'g1', sid: 'S-07', created: 1, by: 'AB', ...extra });
 const pass = (db, uid, pid, token = SK) => setDoc(doc(db, 'guests', uid + '_' + pid), { token, pid, joinedAt: 1 });
@@ -184,14 +204,14 @@ await t('a pass with a made-up token is refused', assertFails(pass(guest, 'phone
 await t('the guest takes a pass with the link', assertSucceeds(pass(guest, 'phoneG', 'g1')));
 await t('the guest takes it again (opening the link twice)', assertSucceeds(pass(guest, 'phoneG', 'g1')));
 await t('the guest reads that patient', assertSucceeds(getDoc(doc(guest, 'patients', 'g1'))));
-await t('the guest edits that patient', assertSucceeds(setDoc(doc(guest, 'patients', 'g1'), { site: 'NUH', created: 1, locked: false, f: { prewarm_0_core: { v: '36.5', t: 3, by: 'GG' } } }, { merge: true })));
+await t('the guest edits that patient', assertSucceeds(setDoc(doc(guest, 'patients', 'g1'), { updatedAt: U(), site: 'NUH', created: 1, locked: false, f: { prewarm_0_core: { v: '36.5', t: 3, by: 'GG' } } }, { merge: true })));
 await t('the guest cannot read another patient', assertFails(getDoc(doc(guest, 'patients', 'g2'))));
-await t('the guest cannot edit another patient', assertFails(setDoc(doc(guest, 'patients', 'g2'), { f: { x: { v: 1, t: 1, by: 'G' } } }, { merge: true })));
+await t('the guest cannot edit another patient', assertFails(setDoc(doc(guest, 'patients', 'g2'), { updatedAt: U(), f: { x: { v: 1, t: 1, by: 'G' } } }, { merge: true })));
 await t('the guest cannot list the hospital', assertFails(getDocs(query(collection(guest, 'patients'), where('site', '==', 'NUH'), where('locked', '==', false)))));
 await t('the guest cannot create a patient', assertFails(setDoc(doc(guest, 'patients', 'g9'), pat('NUH'))));
-await t('the guest cannot delete it', assertFails(setDoc(doc(guest, 'patients', 'g1'), { deleted: 9 }, { merge: true })));
-await t('the guest cannot lock it', assertFails(setDoc(doc(guest, 'patients', 'g1'), { lock: { on: true, t: 9, by: 'G' }, locked: true }, { merge: true })));
-await t('the guest cannot move it', assertFails(setDoc(doc(guest, 'patients', 'g1'), { site: 'SGH' }, { merge: true })));
+await t('the guest cannot delete it', assertFails(setDoc(doc(guest, 'patients', 'g1'), { updatedAt: U(), deleted: 9 }, { merge: true })));
+await t('the guest cannot lock it', assertFails(setDoc(doc(guest, 'patients', 'g1'), { updatedAt: U(), lock: { on: true, t: 9, by: 'G' }, locked: true }, { merge: true })));
+await t('the guest cannot move it', assertFails(setDoc(doc(guest, 'patients', 'g1'), { updatedAt: U(), site: 'SGH' }, { merge: true })));
 await t('the guest saves email and PayNow for it', assertSucceeds(setDoc(doc(guest, 'payments', 'g1'), { ...PAY_G, pid: 'g1' }, { merge: true })));
 await t('the guest cannot read them back', assertFails(getDoc(doc(guest, 'payments', 'g1'))));
 await t('the guest makes its PACU link', assertSucceeds(setDoc(doc(guest, 'pacu', TK2), pacuDoc({ pid: 'g1' }))));
@@ -209,7 +229,7 @@ await t('…but it opens nothing', assertFails(getDoc(doc(other, 'patients', 'g1
 await t('a locked patient is closed to its guest', assertSucceeds(setDoc(doc(a, 'shares', 'shr-locked-0000000000001'), share({ pid: 'g3' }))).then(() => pass(guest, 'phoneG', 'g3', 'shr-locked-0000000000001')).then(() => assertFails(getDoc(doc(guest, 'patients', 'g3')))));
 await t('admin stops the share', assertSucceeds(deleteDoc(doc(adm, 'shares', SK))));
 await t('a stopped share closes the patient to its guest', assertFails(getDoc(doc(guest, 'patients', 'g1'))));
-await t('…and its edits', assertFails(setDoc(doc(guest, 'patients', 'g1'), { f: { prewarm_0_core: { v: '36.6', t: 4, by: 'GG' } } }, { merge: true })));
+await t('…and its edits', assertFails(setDoc(doc(guest, 'patients', 'g1'), { updatedAt: U(), f: { prewarm_0_core: { v: '36.6', t: 4, by: 'GG' } } }, { merge: true })));
 await t('the team still reads the patient', assertSucceeds(getDoc(doc(a, 'patients', 'g1'))));
 
 // scan imports (Firetop writes them with its own sign-in, which bypasses rules; the app only reads and approves)

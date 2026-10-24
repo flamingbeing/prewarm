@@ -3,6 +3,7 @@ import { SERIES, BY_ID, calc, normaliseTemp, isShown, WARM_MIN } from './schema.
 import { setVal, val, isGone } from './store.js';
 import { openKeypad } from './keypad.js';
 import { $, GROUPS, NS, askTime, cleanup, esc, field, fitNums, fromMin, go, header, hooks, lockTaps, nowHM, paint, patients, read, render, route, saveAll, setLeaveGuard, settings, sid, sidL, toMin, toast, view, write } from './ui-core.js';
+import * as cloud from './cloud.js';
 import { failed, pending, refreshNow, set, sharing, sync, syncText } from './ui-sync.js';
 import { SANE, colsFor, dueOf, expected, noWarming, nowFor, pointsFor, savedAt, setTempNA } from './series.js';
 import { declined } from './ui-home.js';
@@ -78,8 +79,12 @@ function syncChipState() {
   const n = Object.keys(pending).map(id => patients[id]).filter(p => p && !isGone(p)).length;
   const bad = Object.keys(failed).map(id => patients[id]).filter(p => p && !isGone(p));
   if (bad.length) return [`${bad.length} not saved`, 'tap for why', 'bad', bad.map(p => `${sid(p)}: ${failed[p.id]}`).join('; ')];
+  // app-sync's status rules: at-risk (the browser may clear this phone's storage), stale (the team isn't being heard)
+  const st = cloud.status()?.state;
+  if (n && st === 'at-risk') return [`${n} at risk`, 'not sent', 'bad', `${n} patient${n === 1 ? '' : 's'} not sent yet, and this browser may clear its storage: get signal, or add the app to the home screen`];
   if (n) return [`${n} waiting`, 'to send', 'wait', `${n} patient${n === 1 ? '' : 's'} not sent to the team yet`];
   if (!navigator.onLine) return ['Offline', 'no signal', 'wait', 'No signal: changes send when it returns'];
+  if (st === 'stale') return ['Checking', 'tap to refresh', 'wait', 'The team’s changes haven’t come through lately: tap to refresh'];
   return ['Synced', 'with team', 'ok', syncText()];
 }
 export function paintSyncChip() {

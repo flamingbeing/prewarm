@@ -20,13 +20,28 @@ export const team = () => !!(shared.member || shared.admin);
 export const sharing = () => cloud.enabled && (team() || (!!shared.uid && Object.keys(guest).length > 0));
 // shared subjects not already covered by the team's own list
 const guestIds = () => shared.admin ? [] : Object.keys(guest).filter(id => guest[id].site !== shared.member?.site);
-// send changed fields; Firestore keeps them on the phone and sends them when there is signal
-// patients with changes sent but not yet confirmed by the server (no signal), kept across reloads; Log out warns
-export let pending = read('pending', {});
-// patients whose last save did not reach the team and will not retry by itself: id -> why (14 Oct 2026). Shown in the chip.
-export let failed = read('failed', {});
-const setFailed = (id, why) => { if (why) failed[id] = why; else if (id in failed) delete failed[id]; else return; write('failed', failed); showSync(); };
-const sessionStart = Date.now();
+// Every save goes to this phone's outbox first (the sync engine, cloud.js), then to the team. pending: patients with
+// saves not yet sent (no signal); failed: patients whose last save did not reach the team and will not retry by itself:
+// id -> why (14 Oct 2026), shown in the chip. Both are worked out from the outbox, plus the app's own reasons (appFailed:
+// not shared, no hospital) that never reach it.
+export let pending = {};
+export let failed = {};
+let appFailed = read('failed', {});
+const why = e => /locked|permission|insufficient/i.test(e || '') ? 'refused (locked by the study admin?)' : 'could not be saved';
+let outbox = null;
+function fromOutbox() {
+  const p = {}, f = { ...appFailed };
+  for (const x of outbox ? outbox.entries() : []) {
+    if (x.kind !== 'patient') continue;
+    if (x.state === 'pending') p[x.record.id] = true;
+    else if ((x.state === 'failed' || x.state === 'conflict') && !(x.record.id in f)) f[x.record.id] = why(x.error);
+  }
+  const was = Object.keys(pending).length;
+  pending = p; failed = f;
+  if (was && !Object.keys(p).length && heard) synced(); else showSync();
+}
+const setFailed = (id, reason) => { if (reason) appFailed[id] = reason; else if (id in appFailed) delete appFailed[id]; else return; write('failed', appFailed); fromOutbox(); };
+let heard = false;   // the team's list has come from the server since this page opened
 // when this phone was last fully in step with the server (nothing waiting to send, team's changes received)
 export let lastSync = read('lastSync', 0);
 function synced() {
@@ -61,16 +76,12 @@ export function sync(p, ids, withLock = false) {
   // no hospital: nothing can be sent. Say so instead of showing "Synced"
   if (!p.site) { setFailed(p.id, 'no hospital: set it in Settings'); return; }
   setFailed(p.id, null);
-  const tok = Date.now() + Math.random();
-  pending[p.id] = tok; write('pending', pending);
-  showSync();
-  const done = () => { if (pending[p.id] === tok) { delete pending[p.id]; write('pending', pending); synced(); } };
-  cloud.push(p, ids, withLock).then(done).catch(e => {
-    // refused (e.g. an admin locked the patient meanwhile): the server drops the change, so it isn't waiting either
-    // it stays marked as failed (chip turns red) until a later save reaches the team
-    if (e?.code === 'permission-denied') { done(); setFailed(p.id, 'refused (locked by the study admin?)'); toast(`${sid(p)}: ${cloud.friendly(e, 'save')}`); }
-    else { setFailed(p.id, 'could not be saved'); toast(cloud.friendly(e, 'save')); }
-  });
+  pending[p.id] = true; showSync();
+  cloud.push(p, ids, withLock).catch(e => {
+    // refused (e.g. an admin locked the patient meanwhile): kept in the outbox as failed (chip turns red) until a later
+    // save reaches the team; the outbox says which (fromOutbox)
+    toast(e?.code === 'permission-denied' ? `${sid(p)}: ${cloud.friendly(e, 'save')}` : cloud.friendly(e, 'save'));
+  }).finally(fromOutbox);
 }
 // Log out (owner, 12 Oct 2026): leaves the team and deletes every patient on this phone, after a warning, and a
 // second one if some changes haven't reached the team yet. Settings (initials, display) stay.
@@ -79,7 +90,7 @@ export async function logOut(btn) {
   const who = shared.member ? `the ${shared.member.site} team` : 'the study';
   if (!confirm(`Log out of ${who} on this phone?\n\nThis deletes all ${n} patient${n === 1 ? '' : 's'} from this phone. What has synced stays with your team.`)) return;
   btn.disabled = true; btn.textContent = 'Checking everything has synced…';
-  if (Object.keys(pending).length && await cloud.flushed(6000)) { pending = {}; write('pending', pending); synced(); }
+  if (Object.keys(pending).length) { await cloud.flushed(6000); fromOutbox(); }
   const unsynced = [...new Set([...Object.keys(pending), ...Object.keys(failed)])].map(id => patients[id]).filter(p => p && !isGone(p)).map(sid);
   if (unsynced.length && !confirm(`Not synced yet: ${unsynced.join(', ')}.${lastSync ? ' ' + syncText().replace(/^Not synced:[^.]*\. ?/, '') : ''}\n\nThese changes haven’t reached your team (no signal?). Logging out now loses them. Cancel, get signal and wait a moment, or Export Excel first.\n\nLog out anyway and lose them?`)) {
     btn.disabled = false; btn.textContent = 'Log out'; return;
@@ -173,7 +184,7 @@ export async function refreshNow(btn) {
       const u = await cloud.whoAmI();
       if (u) { shared.member = await cloud.member(); shared.admin = !u.isAnonymous ? await cloud.isAdmin() : false; shared.email = u.email || ''; shared.uid = u.uid; }
     }
-    if (cloud.enabled && sharing()) { uploadLocal(); await watch(); if (!(await cloud.flushed(5000))) msg = 'Refreshed, but some changes are still waiting for signal.'; }
+    if (cloud.enabled && sharing()) { cloud.nudge(); uploadLocal(); await watch(); if (!(await cloud.flushed(5000))) msg = 'Refreshed, but some changes are still waiting for signal.'; }
     if (swReg) {
       await swReg.update().catch(() => {});
       const w = swReg.installing;
@@ -198,7 +209,7 @@ function take(r) {
   if (m.changed) Object.assign(local, m.rec, { site: local.site || r.site });
   // heal (bug hunt, 12 Oct 2026): the server keeps whichever write arrived last, not the newest; anything this
   // phone holds newer than the copy it just heard goes back up, so both phones and the server settle on the newest
-  if (!local.lock?.on && !r.lock?.on) {
+  if (!local.lock?.on && !r.lock?.on && !pending[r.id]) {
     const newer = Object.keys(local.f).filter(k => (local.f[k]?.t || 0) > (r.f?.[k]?.t || 0));
     if (newer.length) sync(local, newer);
   }
@@ -229,9 +240,8 @@ export async function watch() {
     if (!shared.admin) for (const id of meta.removed || []) {
       if (!patients[id]) continue;
       if (pending[id]) { toast(`${sid(patients[id])} was locked by the study admin before your last changes reached the team. They stay on this phone: ask the admin to unlock it.`); continue; }
-      delete patients[id]; delete pending[id]; changed = true;
+      delete patients[id]; changed = true;
     }
-    if (changed) write('pending', pending);
     for (const r of list) { seen.add(r.id); if (take(r)) changed = true; }
     if (meta.server && !healedAll) {
       healedAll = true;
@@ -242,11 +252,8 @@ export async function watch() {
         if (!shared.admin && site && site !== shared.member?.site) continue;
         sync(p, Object.keys(p.f));
       }
-      // changes waiting from an earlier visit were sent again just above if still newer: stop counting them
-      for (const [id, tok] of Object.entries(pending)) if (tok < sessionStart) delete pending[id];
-      write('pending', pending);
     }
-    if (meta.server) { synced(); resyncOnce(); }
+    if (meta.server) { heard = true; synced(); resyncOnce(); }
     watchPacu();
     if (changed) redraw();
   }, async e => {
@@ -312,12 +319,16 @@ if (cloud.enabled && cloud.isAdminLink()) {
   if (email) finishAdmin(email);
   else location.hash = '#/confirm';
 }
+let unOutbox = null;
 if (cloud.enabled) cloud.onUser(async u => {
   const before = sharing();
   shared.member = u ? await cloud.member() : null;
   shared.admin = u && !u.isAnonymous ? await cloud.isAdmin() : false;
   shared.email = u?.email || '';
   shared.uid = u?.uid || null;
+  // this account's saves in the outbox (also those left from an earlier visit: they send now)
+  unOutbox?.(); unOutbox = null; outbox = null;
+  if (u) { outbox = await cloud.queue(); unOutbox = outbox.onChange(fromOutbox); fromOutbox(); }
   if (shared.member) { settings.site = shared.member.site; if (!settings.me && shared.member.initials) settings.me = shared.member.initials; saveSettings(); }
   uploadLocal();
   await watch();

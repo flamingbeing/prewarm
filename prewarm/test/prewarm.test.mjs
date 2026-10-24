@@ -4,7 +4,7 @@ import { inflateRawSync } from 'node:zlib';
 import { HEADERS, SECTIONS, SCREENING_HEADERS } from '../js/headers.js';
 import { FIELDS, BY_ID, PAGES, SCREENING, SITES, EXTRA, EXTRA_BY_ID, PACU_KEYS, colLetter, colIndex, calc, normaliseTemp, isShown, shownValue } from '../js/schema.js';
 import fs from 'node:fs';
-import { newRecord, setVal, val, mergeRecord, mergeInto, packFile, readFile, isGone, markDeleted, restore } from '../js/store.js';
+import { newRecord, setVal, val, mergeRecord, mergeInto, packFile, readFile, isGone, markDeleted, restore, mergeShared } from '../js/store.js';
 import { workbook, workbookSheets, cellFor, ixText } from '../js/export.js';
 import { dateSerial, timeSerial } from '../js/xlsx.js';
 
@@ -254,6 +254,39 @@ function unzip(bytes) {
   assert.match(ticksHtml({ pid: 'x', email: 'e@x.y' }, esc), /data-payclear="x" disabled/, 'Delete waits for Payment sent');
   assert.doesNotMatch(ticksHtml({ pid: 'x', email: 'e@x.y', paid: { t: 1, by: 'a' } }, esc), /data-payclear="x" disabled/);
   assert.doesNotMatch(ticksHtml({ pid: 'x', paid: { t: 1, by: 'a' }, cleared: { t: 2, by: 'a' } }, esc), /data-payclear/, 'nothing to delete once deleted');
+}
+
+// the team's copy merged on the server by the sync engine (store.js mergeShared, 24 Oct 2026)
+{
+  const F = (v, t, by = 'AB') => ({ v, t, by });
+  const server = { id: 'p1', site: 'NUH', created: 5, locked: false, updatedAt: 100, f: { a: F('1', 10), b: F('2', 10) } };
+  // two phones edit different fields: both kept
+  const one = mergeShared(server, { id: 'p1', site: 'NUH', created: 5, f: { a: F('9', 20), b: F('2', 10) } }, [{ ids: ['a'] }]);
+  const two = mergeShared(one, { id: 'p1', site: 'NUH', created: 5, f: { a: F('1', 10), b: F('8', 21, 'CD') } }, [{ ids: ['b'] }]);
+  assert.deepEqual([two.f.a.v, two.f.b.v], ['9', '8'], 'different fields from two phones are both kept');
+  // the same field from two phones: the newest t wins, whichever arrives last
+  const late = mergeShared(two, { id: 'p1', site: 'NUH', created: 5, f: { a: F('old', 15) } }, [{ ids: ['a'] }]);
+  assert.equal(late.f.a.v, '9', 'an older value arriving later does not win');
+  // a phone whose copy has fewer fields never wipes the others (never an empty f)
+  assert.equal(Object.keys(mergeShared(two, { id: 'p1', site: 'NUH', created: 5, f: {} }, []).f).length, 2);
+  // the latest delete wins; created keeps the earliest
+  assert.equal(mergeShared(two, { ...two, deleted: 50, created: 9 }, []).deleted, 50);
+  assert.equal(mergeShared(two, { ...two, created: 9 }, []).created, 5);
+  // a member's save keeps the server's lock and hospital, and can't add one
+  const lockedOff = { ...server, lock: { on: false, t: 30, by: 'lead@example.com' } };
+  const m = mergeShared(lockedOff, { ...server, site: 'SGH', lock: { on: true, t: 99, by: 'AB' } }, [{ ids: ['a'] }]);
+  assert.deepEqual([m.lock.on, m.locked, m.site], [false, false, 'NUH'], 'a member never changes lock or site');
+  assert.equal('lock' in mergeShared(server, { ...server, lock: { on: true, t: 99, by: 'AB' } }, [{ ids: [] }]), false);
+  assert.equal('lock' in mergeShared(null, { id: 'n', site: 'NUH', created: 1, f: {}, lock: { on: true, t: 1, by: 'AB' } }, []), false, 'a member creates no lock');
+  // an admin locks: the lock goes up and locked follows it
+  const lk = mergeShared(server, { ...server, lock: { on: true, t: 40, by: 'lead@example.com' } }, [{ ids: [], lock: true }]);
+  assert.deepEqual([lk.lock.on, lk.locked], [true, true]);
+  // locked: a member's save is refused (kept as failed on the phone), an admin's changes only the lock
+  assert.throws(() => mergeShared(lk, { ...server, f: { a: F('x', 99) } }, [{ ids: ['a'] }]), e => e.code === 'permission-denied');
+  const un = mergeShared(lk, { ...server, f: { a: F('x', 99) }, lock: { on: false, t: 41, by: 'lead@example.com' } }, [{ ids: [], lock: true }]);
+  assert.deepEqual([un.lock.on, un.locked, un.f.a.v], [false, false, '1'], 'unlocking changes nothing else');
+  // the server's extra keys (updatedAt, id) are left to the engine to write
+  assert.equal('updatedAt' in two || 'id' in two, false);
 }
 
 console.log('prewarm: ok');
