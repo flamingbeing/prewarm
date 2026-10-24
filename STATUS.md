@@ -1,11 +1,11 @@
 # Status
 
 ## Now
+- Patients sync through app-sync 0.2.0 since 24 Oct 2026 (#15); patients index deployed and `updatedAt` backfilled.
 - Live from this repo's Worker since 21 Oct 2026 (moved from anawj-site; no downtime). Rules deploy on merge.
 
 ## Waiting on the owner
-- Patients sync through app-sync 0.2.0 (PR open, not merged): before merging, deploy `prewarm/firestore.indexes.json`
-  (the rules deploy can't), and after merging run `tools/backfill-updated-at.mjs` (dry run first).
+- Nothing.
 
 ## Next (in order)
 1. Check a real scan upload from a phone on prewarmstudy.anawj.com (the relay's settings are all set).
