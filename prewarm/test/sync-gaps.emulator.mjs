@@ -22,6 +22,14 @@ const serverWait = async (id, ok, what, ms = 20000) => {
 };
 const lockOnServer = (id, on) => fetch(`${FS}/patients/${id}?updateMask.fieldPaths=lock&updateMask.fieldPaths=locked&updateMask.fieldPaths=updatedAt`, { method: 'PATCH', headers: OWNER, // what an admin's lock writes (stamped, so phones listening for changes hear it)
   body: JSON.stringify({ fields: { updatedAt: { integerValue: String(Date.now()) }, locked: { booleanValue: on }, lock: { mapValue: { fields: { on: { booleanValue: on }, t: { integerValue: String(Date.now()) }, by: { stringValue: 'lead@example.com' } } } } } }) });
+// a patient written straight to the emulator (past the rules), last changed at `at`
+const seedPatient = (id, sid, at) => fetch(`${FS}/patients/${id}`, { method: 'PATCH', headers: OWNER,
+  body: JSON.stringify({ fields: { id: { stringValue: id }, site: { stringValue: 'NUH' }, created: { integerValue: String(at) }, locked: { booleanValue: false }, updatedAt: { integerValue: String(at) },
+    f: { mapValue: { fields: { enrol_id: { mapValue: { fields: { v: { stringValue: sid }, t: { integerValue: String(at) }, by: { stringValue: 'AA' } } } } } } } } }) });
+// the leave entry an admin's lock writes (app-sync leaveEntry), past the rules
+const leaveOnServer = (id, version) => fetch(`${FS}/leaves/patient:${id}`, { method: 'PATCH', headers: OWNER,
+  body: JSON.stringify({ fields: { id: { stringValue: 'patient:' + id }, kind: { stringValue: 'patient' }, site: { stringValue: 'NUH' }, deletedAt: { integerValue: String(version) }, updatedAt: { integerValue: String(version) },
+    data: { mapValue: { fields: { id: { stringValue: id }, updatedAt: { integerValue: String(version) } } } } } }) });
 
 const b = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] } : {});
 const errors = [];
@@ -149,22 +157,21 @@ try {
     await C.ctx.close();
   });
 
-  await doneIn('pending entries from an earlier session are dropped on the first server word', async () => {
+  // (was "pending entries from an earlier session are dropped": the old send tokens in prewarm:pending went with the
+  // app-sync outbox, 24 Oct 2026; what they guarded stays: an older value left on a phone never wins over the server's)
+  await doneIn('an older value left on the phone from an earlier session does not overwrite the server\u2019s newer one', async () => {
     const C = await phone('CC'); const c = C.page;
     await c.goto(BASE + '#/'); await listed(c, /GAP-01/);
     const before = (await server(id)).f.wt;
-    // a leftover from an earlier session: an old token for a patient, and an older local value for one box
     await c.evaluate(id => {
-      localStorage.setItem('prewarm:pending', JSON.stringify({ [id]: 1 }));
       const all = JSON.parse(localStorage.getItem('prewarm:patients')); all[id].f.wt = { v: '55', t: 5, by: 'CC' };
       localStorage.setItem('prewarm:patients', JSON.stringify(all));
     }, id);
     await c.reload(); await c.waitForSelector('body[data-cloud=ready]');
-    await c.waitForFunction(() => !JSON.parse(localStorage.getItem('prewarm:pending') || '{}') || Object.keys(JSON.parse(localStorage.getItem('prewarm:pending') || '{}')).length === 0, null, { timeout: 20000 })
-      .catch(async () => { throw new Error('pending was not cleared: ' + await c.evaluate(() => localStorage.getItem('prewarm:pending'))); });
+    await c.waitForFunction(([i, v]) => JSON.parse(localStorage.getItem('prewarm:patients'))[i]?.f.wt?.v === v, [id, before.v], { timeout: 20000 })
+      .catch(async () => { throw new Error('this phone kept its older weight: ' + await stored(c, id, 'wt')); });
     await c.waitForTimeout(1500);
     assert.deepEqual((await server(id)).f.wt, before, 'the older local value did not overwrite the newer server one');
-    assert.equal(await stored(c, id, 'wt'), before.v, 'and this phone took the server’s');
     await C.ctx.close();
   });
 
@@ -179,7 +186,7 @@ try {
     await a.waitForFunction(() => window.__toasts.some(t => /locked/.test(t)), null, { timeout: 30000 })
       .catch(async () => { throw new Error('no lock warning; toasts: ' + JSON.stringify([...new Set(await a.evaluate(() => window.__toasts))]) + ' | list ' + await a.evaluate(() => { location.hash = '#/'; return new Promise(r => setTimeout(() => r((document.querySelector('.list')?.textContent || '').replace(/\s+/g, ' ')), 500)); }) + ' | pending before online ' + pend + ' age before ' + ageBefore + ' | pending now ' + await a.evaluate(() => localStorage.getItem('prewarm:pending')) + ' | age ' + await stored(a, id, 'age') + ' | server ' + JSON.stringify((await server(id)).locked)); });
     await a.goto(BASE + '#/');
-    assert.match(await a.textContent('.list'), /GAP-01[\s\S]*Not sent yet/, 'the patient stays on the phone, marked as not sent');
+    assert.match(await a.textContent('.list'), /GAP-01[\s\S]*(Not sent yet|Not saved to the team)/, 'the patient stays on the phone, marked as not sent');
     assert.equal(await stored(a, id, 'age'), '47', 'with the unsent change');
     // B had no unsent changes: the locked patient leaves its phone
     await bb.goto(BASE + '#/');
@@ -190,18 +197,42 @@ try {
   await doneIn('a lock arriving while a phone has unsent changes keeps the patient and warns', async () => {
     const C = await phone('CC'); const c = C.page;
     await c.goto(BASE + '#/'); await listed(c, /GAP-01/);
-    // unsent changes: a send token newer than this session, as a save waiting for signal leaves
-    await c.evaluate(id => localStorage.setItem('prewarm:pending', JSON.stringify({ [id]: Date.now() + 3600e3 })), id);
-    await c.reload(); await c.waitForSelector('body[data-cloud=ready]'); await listed(c, /GAP-01/);
+    // unsent changes: a save the outbox holds (the phone says it has no signal; its listener still hears the server)
+    await c.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }));
+    await c.goto(BASE + `#/p/${id}/form/preop`); await c.waitForSelector('#f-age');
+    await c.fill('#f-age', '52'); await c.keyboard.press('Tab'); await c.waitForTimeout(800);
+    await c.goto(BASE + '#/'); await listed(c, /GAP-01[\s\S]*Not sent yet/);
     await lockOnServer(id, true);
     await c.waitForFunction(() => window.__toasts.some(t => /locked by the study admin before your last changes reached the team/.test(t)), null, { timeout: 20000 })
       .catch(async () => { throw new Error('no lock warning; toasts: ' + JSON.stringify([...new Set(await c.evaluate(() => window.__toasts))])); });
     assert.match(await c.textContent('.list'), /GAP-01/, 'the patient stays on the phone');
+    assert.equal(await stored(c, id, 'age'), '52', 'with the unsent change');
     await lockOnServer(id, false);
+    await C.ctx.close();
+  });
+
+  await doneIn('a patient locked while a phone is closed leaves it at its next open', async () => {
+    // an older patient (changed 2 h ago, so the next open's read of what changed doesn't cover it) and a newer one
+    assert.ok((await seedPatient('gapold01', 'GAP-OLD', Date.now() - 2 * 3600e3)).ok);
+    assert.ok((await seedPatient('gapnew01', 'GAP-NEW', Date.now())).ok);
+    const C = await phone('CC'); const c = C.page;
+    await c.goto(BASE + '#/'); await listed(c, /GAP-OLD/); await listed(c, /GAP-NEW/);
+    await c.waitForTimeout(2000); await c.close();
+    // an admin locks it while the phone is closed
+    await lockOnServer('gapold01', true);
+    assert.ok((await leaveOnServer('gapold01', Date.now())).ok);
+    const c2 = await C.ctx.newPage();
+    c2.on('pageerror', e => errors.push('CC: ' + e.message));
+    await c2.goto(BASE + '#/'); await c2.waitForSelector('body[data-cloud=ready]'); await listed(c2, /GAP-NEW/);
+    await c2.waitForFunction(() => !/GAP-OLD/.test(document.querySelector('.list')?.textContent || ''), null, { timeout: 20000 })
+      .catch(() => { throw new Error('the locked patient stayed on the phone until its weekly full read'); });
+    // unlocked (a newer version): it shows again
+    await lockOnServer('gapold01', false);
+    await listed(c2, /GAP-OLD/);
     await C.ctx.close();
   });
 } finally {
   await b.close();
 }
 if (errors.length) { console.error('prewarm sync gaps: FAIL\n- ' + errors.join('\n- ')); process.exit(1); }
-console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, old pending dropped, locked with unsent changes, OK on a changed reading keeps the other phone\u2019s boxes)');
+console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, older local value loses, locked with unsent changes, locked while a phone was closed, OK on a changed reading keeps the other phone\u2019s boxes)');

@@ -2,7 +2,9 @@
 // sign-in); admins sign in with an emailed link. Access is decided by firestore.rules. Demo mode (?demo) never connects.
 //
 //   members/{uid}  { site, initials, code, joinedAt }       codes/{site}  { code, setAt, setBy }   (admins only)
-//   admins/{email} {}                                       patients/{id} { site, created, updatedAt, id, locked, deleted?, lock?, f: { id: {v,t,by} } }
+//   admins/{email} {}                                       patients/{id} { site, created, updatedAt, serverAt, id, locked, deleted?, lock?, f: { id: {v,t,by} } }
+//   leaves/patient:{id} { id, kind, data: { id, updatedAt }, deletedAt, site, updatedAt, serverAt }  (a patient an admin
+//                  locked: phones that were closed drop it at their next open; admins write, the hospital's team reads)
 //   pacu/{token}   { site, pid, sid, created, f }      (the PACU nurse's link: the token is the secret; see firestore.rules)
 //   shares/{token} { site, pid, sid, created, by }  guests/{uid}_{pid} { token, pid, joinedAt }  (the Share subject link; see firestore.rules)
 //   scanImports/{id} { scan, subject?, createdAt, status, pages, fields: { id: { v, flags, page?, box? } }, reviewedBy?, reviewedAt? }  (Firetop writes, admins read and approve)
@@ -15,7 +17,7 @@ import { mergeShared } from './store.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 // the sync engine (patients): an exact version, precached by sw.js
-const SYNC = 'https://core.anawj.com/sync/0.2.0/index.js';
+const SYNC = 'https://core.anawj.com/sync/0.3.0/index.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -41,6 +43,8 @@ async function start() {
 // the server one at a time, merged there field by field (store.js mergeShared), so a save never waits in Firestore's own
 // queue and is never lost with its cache. Opens listen only for patients changed since the last sync (updatedAt), with
 // a copy of the list on the phone. Members, codes, admins, forms, payments, PACU links and shares stay direct writes.
+// Server stamps (app-sync 0.3.0, 24 Oct 2026): every save also carries serverAt (the server's clock); the hub still
+// listens by updatedAt until every patient has serverAt (tools/backfill-server-at.mjs) and the rules require it.
 let engine = null;
 const listeners = new Set();   // watchPatients callbacks, so the watchdog can start them again
 function makeEngine({ db, F, S, auth }) {
@@ -51,20 +55,30 @@ function makeEngine({ db, F, S, auth }) {
     quiet: () => !queue.pending(),
   });
   const fs = S.createFirestoreBackend({
-    sdk: async () => ({ db, F }), path: () => ['patients'],
-    // members: their hospital's unlocked patients (the rules refuse anything else); admins (scope ''): all of them
-    where: site => site ? [['site', '==', site], ['locked', '==', false]] : [],
-    merge: { patients: (current, record, _base, ops) => mergeShared(current, record, ops) },
+    sdk: async () => ({ db, F }), path: (_site, coll) => [coll], stampMode: 'server',
+    // members: their hospital's unlocked patients and its leave entries (the rules refuse anything else); admins
+    // (scope ''): every patient, locked too, so no leave entries (site '' matches none: they would drop locked ones)
+    where: (site, coll) => coll === 'leaves' ? [['site', '==', site]] : site ? [['site', '==', site], ['locked', '==', false]] : [],
+    // the server's updatedAt goes on to stamp (below), so a save is always newer than the copy it replaces
+    merge: { patients: (current, record, _base, ops) => ({ ...mergeShared(current, record, ops), ...(current?.updatedAt ? { updatedAt: current.updatedAt } : {}) }) },
+    // never older than the server's copy, even from a phone whose clock is behind: an unlock must be newer than the
+    // lock's leave entry, or a member's phone would take the unlocked patient for the copy that left
+    stamp: doc => ({ ...doc, updatedAt: Math.max(Date.now(), (Number(doc.updatedAt) || 0) + 1) }),
     onSnapshotMeta: (_coll, meta) => watchdog.heard(meta),
   });
-  const stores = S.createStores({ prefix: 'prewarm-store:', colls: ['patients'] });
-  // no recycle bin collection; until every patient carries updatedAt (the backfill), opens read in full
-  const hub = S.createSyncHub({ openStore: stores.openStore, listen: fs.listen, fetchOne: fs.fetchOne, bin: null, unstamped: 'full', onError: e => dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })) });
+  const stores = S.createStores({ prefix: 'prewarm-store:', colls: ['patients'], metaOnly: ['leaves'] });
+  // no recycle bin collection; leaves: patients locked since this phone's last sync (they left its query, which a
+  // listener never hears of). Until every patient carries updatedAt (the backfill), opens read in full
+  const hub = S.createSyncHub({ openStore: stores.openStore, listen: fs.listen, fetchOne: fs.fetchOne, bin: null, feeds: { leaves: { patient: 'patients' } }, unstamped: 'full', onError: e => dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })) });
   S.replanOnWake(hub);
   const outbox = S.createOutbox({ name: 'prewarm-outbox' });
   const queue = S.createWriteQueue({
     store: outbox, getOwner: () => auth.currentUser?.uid || null,
-    backend: (_owner, _kind, record, base, extra) => fs.commit('', 'patients', record, base, extra),
+    backend: async (_owner, _kind, record, base, extra) => {
+      const done = await fs.commit('', 'patients', record, base, extra);
+      if (done?.lock?.on && (extra?.ops || []).some(o => o?.lock)) await leaveFor(done);
+      return done;
+    },
     online: () => navigator.onLine !== false,
   });
   addEventListener('online', () => { queue.kick(); watchdog.event(); });
@@ -73,6 +87,14 @@ function makeEngine({ db, F, S, auth }) {
   setInterval(() => watchdog.check(), 30000);
   let persisted = true;
   S.persistGuard().then(r => { persisted = !r.supported || r.persisted; queue.kick(); });
+  // an admin's lock, once on the server: a leave entry carrying the locked version, so a member's phone that was
+  // closed drops the patient at its next open (an unlock is newer, so it shows again). Lost signal: the save stays
+  // queued and is sent again (the lock is already there, so only this is written). Refused (rules not deployed yet):
+  // the lock still stands, and closed phones drop the patient at their weekly full read, as before.
+  async function leaveFor(rec) {
+    try { await F.setDoc(F.doc(db, 'leaves', 'patient:' + rec.id), { ...S.leaveEntry('patient', rec), site: rec.site, ...await fs.stampFields() }); }
+    catch (e) { if (e?.code === 'unavailable' || e?.code === 'deadline-exceeded') throw e; console.warn('Leave entry not written', e); }
+  }
   return { hub, queue, stores, watchdog, S, persisted: () => persisted };
 }
 // the write queue's saves for this phone's account (activated once signed in), or null before the engine started
@@ -249,7 +271,10 @@ export async function watchPatients(site, cb, onError) {
 export async function push(rec, ids, withLock = false) {
   const q = await queue();
   const { auth } = await sdk();
-  const body = { id: rec.id, site: rec.site, created: rec.created, f: rec.f };
+  // every field says whether it was worked out (auto) or typed: a typed BMI sent without auto: false kept the server's
+  // old auto: true, and other phones then worked it out again over the typed one
+  const f = Object.fromEntries(Object.entries(rec.f || {}).map(([k, x]) => [k, x && typeof x === 'object' ? { ...x, auto: !!x.auto } : x]));
+  const body = { id: rec.id, site: rec.site, created: rec.created, f };
   if (rec.deleted) body.deleted = rec.deleted;
   if (rec.lock) body.lock = rec.lock;
   try { await q.save('patient', auth.currentUser.uid, plain(body), null, { ops: { ids, ...(withLock ? { lock: true } : {}) } }); }
@@ -408,7 +433,8 @@ export async function watchPatient(pid, cb, onError) {
   const { db, F } = await sdk();
   return F.onSnapshot(F.doc(db, 'patients', pid), { includeMetadataChanges: true }, snap => {
     const server = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
-    if (snap.exists()) cb([{ id: snap.id, ...snap.data() }], { server, removed: [] });
+    // serverAt (a Firestore Timestamp) as ms, as the sync engine hands it over
+    if (snap.exists()) { const d = snap.data(); cb([{ id: snap.id, ...d, ...(d.serverAt?.toMillis ? { serverAt: d.serverAt.toMillis() } : {}) }], { server, removed: [] }); }
     else cb([], { server, removed: server ? [pid] : [] });
   }, onError);
 }

@@ -192,6 +192,7 @@ route(/^\/confirm$/, () => {
 const siteOfCode = code => SITES.find(x => code.startsWith(x + '-')) || null;
 export async function joinTeam(site, code, btn) {
   btn.disabled = true; btn.textContent = 'Joining…';
+  shared.joining = true;
   try {
     await cloud.join(site, code, settings.me);
     shared.member = await cloud.member();
@@ -203,5 +204,5 @@ export async function joinTeam(site, code, btn) {
     shared.member = null;
     toast(err?.code === 'permission-denied' ? 'That code isn’t right for ' + site + '. Ask a study admin.' : cloud.friendly(err));
     return false;
-  }
+  } finally { shared.joining = false; }
 }

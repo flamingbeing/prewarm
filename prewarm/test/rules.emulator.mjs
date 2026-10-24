@@ -1,7 +1,7 @@
 // Firestore rules checks for prewarm/firestore.rules against the local emulator (fake accounts, demo project only).
 // Run with tools/test-rules.sh (it starts the emulator and runs this from prewarm/).
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, getDocs, collection, query, where, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, getDocs, collection, query, where, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore';
 import fs from 'node:fs';
 const env = await initializeTestEnvironment({ projectId: 'demo-prewarm', firestore: { rules: fs.readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8085 } });
 const ADMIN = 'lead@example.com';
@@ -286,6 +286,36 @@ await env.withSecurityRulesDisabled(async ctx => { if (!(await getDoc(doc(ctx.fi
 await t('admin deletes the email and PayNow', assertSucceeds(updateDoc(payDoc(adm), { email: deleteField(), paynow: deleteField(), cleared: { t: 7, by: ADMIN } })));
 await env.withSecurityRulesDisabled(async ctx => { const d = (await getDoc(doc(ctx.firestore(), 'payments', 'p1'))).data(); if (d.email || d.paynow || !d.paid || !d.emailSent) throw new Error('not cleared as expected'); });
 await t('admin deletes the entry', assertSucceeds(deleteDoc(payDoc(adm))));
+
+// server stamps (app-sync 0.3.0, 24 Oct 2026): serverAt is optional until the backfill, and must be the server's time
+await t('a new patient with serverAt = the server time', assertSucceeds(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: serverTimestamp() })));
+await t('a save with serverAt = the server time', assertSucceeds(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: serverTimestamp(), f: { x: { v: 1, t: 30, by: 'AB' } } })));
+await t('an older app version still saves without serverAt', assertSucceeds(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', f: { x: { v: 2, t: 31, by: 'AB' } } })));
+// a phone clock a minute behind (Date.now() itself could land on the server's very millisecond: then it is the server time)
+await t('serverAt from the phone clock is refused', assertFails(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: Timestamp.fromMillis(Date.now() - 60000) })));
+await t('serverAt as a number is refused', assertFails(setDoc(doc(a, 'patients', 's1'), { ...pat('NUH'), id: 's1', serverAt: Date.now() })));
+const SL = (on, t) => ({ updatedAt: U(), serverAt: serverTimestamp(), locked: on, lock: { on, t, by: ADMIN } });
+await t('admin locks with serverAt', assertSucceeds(setDoc(doc(adm, 'patients', 's1'), SL(true, 40), { merge: true })));
+await t('admin unlocks with serverAt', assertSucceeds(setDoc(doc(adm, 'patients', 's1'), SL(false, 41), { merge: true })));
+await t('member still cannot lock with serverAt', assertFails(setDoc(doc(a, 'patients', 's1'), SL(true, 42), { merge: true })));
+
+// leave entries (a patient an admin locked): admins write them, the hospital's team reads them
+const LV = (pid, site = 'NUH', extra = {}) => ({ id: 'patient:' + pid, kind: 'patient', data: { id: pid, updatedAt: 1234 }, deletedAt: 1235, site, updatedAt: 1235, serverAt: serverTimestamp(), ...extra });
+await t('admin writes a leave entry', assertSucceeds(setDoc(doc(adm, 'leaves', 'patient:s1'), LV('s1'))));
+await t('admin writes it again (a newer lock)', assertSucceeds(setDoc(doc(adm, 'leaves', 'patient:s1'), { ...LV('s1'), deletedAt: 1300 })));
+await t('admin writes one without serverAt (until the backfill)', assertSucceeds(setDoc(doc(adm, 'leaves', 'patient:sgh1'), (({ serverAt, ...r }) => r)(LV('sgh1', 'SGH')))));
+await t('member cannot write a leave entry', assertFails(setDoc(doc(a, 'leaves', 'patient:p1'), LV('p1'))));
+await t('a leave entry under another id is refused', assertFails(setDoc(doc(adm, 'leaves', 'patient:s1'), LV('p1'))));
+await t('a leave entry with extra fields is refused', assertFails(setDoc(doc(adm, 'leaves', 'patient:s1'), LV('s1', 'NUH', { f: {} }))));
+await t('a leave entry with patient data is refused', assertFails(setDoc(doc(adm, 'leaves', 'patient:s1'), LV('s1', 'NUH', { data: { id: 's1', updatedAt: 1, f: {} } }))));
+await t('a leave entry with a phone-clock serverAt is refused', assertFails(setDoc(doc(adm, 'leaves', 'patient:s1'), LV('s1', 'NUH', { serverAt: Timestamp.fromMillis(1) }))));
+await t('member lists its hospital\'s leave entries', assertSucceeds(getDocs(query(collection(a, 'leaves'), where('site', '==', 'NUH'), where('deletedAt', '>', 0)))));
+await t('member lists them by serverAt too', assertSucceeds(getDocs(query(collection(a, 'leaves'), where('site', '==', 'NUH'), where('serverAt', '>', Timestamp.fromMillis(0))))));
+await t('member cannot list another hospital\'s', assertFails(getDocs(query(collection(a, 'leaves'), where('site', '==', 'SGH')))));
+await t('member cannot list them all', assertFails(getDocs(collection(a, 'leaves'))));
+await t('a stranger cannot read them', assertFails(getDoc(doc(b, 'leaves', 'patient:s1'))));
+await t('admin lists them all', assertSucceeds(getDocs(collection(adm, 'leaves'))));
+await t('member cannot delete one', assertFails(deleteDoc(doc(a, 'leaves', 'patient:s1'))));
 
 await env.cleanup();
 console.log(`prewarm rules: ${n - fail}/${n} checks passed`);

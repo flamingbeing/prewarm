@@ -8,6 +8,31 @@
         { "fieldPath": "locked", "order": "ASCENDING" },
         { "fieldPath": "updatedAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "patients",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "site", "order": "ASCENDING" },
+        { "fieldPath": "locked", "order": "ASCENDING" },
+        { "fieldPath": "serverAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaves",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "site", "order": "ASCENDING" },
+        { "fieldPath": "deletedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "leaves",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "site", "order": "ASCENDING" },
+        { "fieldPath": "serverAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

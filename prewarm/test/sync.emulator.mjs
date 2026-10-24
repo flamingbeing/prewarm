@@ -338,20 +338,57 @@ try {
   await e.waitForFunction(() => /was stopped/.test(document.querySelector('main')?.textContent || ''), null, { timeout: 25000 });
   await ad.goto(BASE + '#/');
   await ad.waitForFunction(() => /SYNC-01/.test(document.querySelector('.list')?.textContent || ''), null, { timeout: 15000 });
+  // phone C has the patient, then is closed (its copy stays on the phone) before the admin locks it
+  const pc = await phone('CC');
+  await pc.fill('#code', 'NUH-TEST-CODE'); await pc.click('#join'); await toastSays(pc, /Joined the NUH team/);
+  await pc.goto(BASE + '#/');
+  await pc.waitForFunction(() => /SYNC-01/.test(document.querySelector('.list')?.textContent || ''), null, { timeout: 20000 });
+  // nothing left to send (a patient with unsent changes stays on the phone when locked, by design)
+  await pc.waitForFunction(() => /Synced/.test(document.querySelector('.syncline')?.textContent || '') && !/Not sent yet/.test(document.querySelector('.list')?.textContent || ''), null, { timeout: 20000 });
+  await pc.waitForTimeout(1500);
+  const pcctx = pc.context();
+  await pc.close();
   // the admin locks it: phone A sees it locked and can't open it; then the admin unlocks it
   await ad.click('#select');
   await ad.locator('.selrow', { hasText: 'SYNC-01' }).locator('input').check();
   ad.once('dialog', d => d.accept());
   await ad.click('#lock');
+  // server stamps (app-sync 0.3.0): the save carries the server's time, and the lock writes a leave entry with the
+  // locked version, readable by the hospital's team
+  const sync01Id = await ad.evaluate(() => Object.values(JSON.parse(localStorage.getItem('prewarm:patients'))).find(p => p.f?.enrol_id?.v === 'SYNC-01').id);
+  let leave = null;
+  for (let i = 0; i < 40 && !leave?.fields; i++) { leave = await (await fetch(`${FS}/leaves/patient:${sync01Id}`, { headers: { Authorization: 'Bearer owner' } })).json(); if (!leave?.fields) await a.waitForTimeout(300); }
+  assert.ok(leave?.fields, 'a leave entry for the locked patient: ' + JSON.stringify(leave).slice(0, 200));
+  const lockedDoc = await (await fetch(`${FS}/patients/${sync01Id}`, { headers: { Authorization: 'Bearer owner' } })).json();
+  assert.equal(lockedDoc.fields.locked.booleanValue, true);
+  assert.ok(lockedDoc.fields.serverAt?.timestampValue, 'the patient carries serverAt');
+  assert.ok(leave.fields.serverAt?.timestampValue, 'the leave entry carries serverAt');
+  assert.equal(leave.fields.site.stringValue, 'NUH');
+  assert.equal(leave.fields.data.mapValue.fields.updatedAt.integerValue, lockedDoc.fields.updatedAt.integerValue, 'the leave entry names the locked version');
+  // phone C opens again: the locked patient leaves it at once (it no longer waits for the weekly full read)
+  const pc2 = await pcctx.newPage();
+  pc2.on('pageerror', e => errors.push('CC: ' + e.message));
+  await pc2.goto(BASE + '#/'); await pc2.waitForSelector('body[data-cloud=ready]');
+  await pc2.waitForFunction(() => !/SYNC-01/.test(document.querySelector('main').textContent), null, { timeout: 20000 })
+    .catch(async () => { throw new Error('the locked patient stayed on the closed phone: ' + (await pc2.textContent('.list')).replace(/\s+/g, ' ').slice(0, 200)); });
   // a team phone doesn't get a locked patient at all: it goes from phone A, and the server refuses to send it
   await a.goto(BASE + '#/');
   await a.waitForFunction(() => !/SYNC-01/.test(document.querySelector('main').textContent), null, { timeout: 15000 });
   assert.ok(!(await a.evaluate(() => localStorage.getItem('prewarm:patients'))).includes('SYNC-01'), 'not kept on phone A');
   if (SHOTS) await a.screenshot({ path: SHOTS + '/locked.png' });
+  // the admin's phone keeps the locked patient (admins get no leave entries), after a reload too
+  await ad.reload(); await ad.waitForSelector('body[data-cloud=ready]');
+  await ad.waitForFunction(() => /SYNC-01[\s\S]*Locked by the study admin/.test(document.querySelector('.list')?.textContent || ''), null, { timeout: 20000 });
+  await ad.waitForTimeout(2000);
+  assert.match(await ad.textContent('.list'), /SYNC-01/, 'the locked patient stays on the admin\u2019s phone');
   await ad.click('#select');
   await ad.locator('.selrow', { hasText: 'SYNC-01' }).locator('input').check();
   await ad.click('#unlock');
   await a.waitForFunction(() => /SYNC-01/.test(document.querySelector('.list')?.textContent || ''), null, { timeout: 15000 });
+  // the unlock is newer than the leave entry: the patient shows again on phone C
+  await pc2.goto(BASE + '#/');
+  await pc2.waitForFunction(() => /SYNC-01/.test(document.querySelector('.list')?.textContent || ''), null, { timeout: 20000 });
+  await pcctx.close();
   // locking and unlocking keep the readings on the server copy
   const docs = await (await fetch(`${FS}/patients`, { headers: { Authorization: 'Bearer owner' } })).json();
   const sync01 = docs.documents.find(d => /SYNC-01/.test(JSON.stringify(d.fields.f)));
@@ -453,7 +490,7 @@ try {
   await bb.waitForSelector('#code', { timeout: 15000 });
 
   assert.deepEqual(errors, []);
-  console.log('prewarm sync: ok (two phones, PACU nurse link, share subject link, join code, readings both ways, admin email-link and password sign-in, managing admins, codes, join link and QR, blank Word form upload and Form view, email and PayNow (team writes, admin ticks and deletes), lock, offline edits heal, open reading asks, reload offline, same reading on both, log out)');
+  console.log('prewarm sync: ok (two phones, PACU nurse link, share subject link, join code, readings both ways, admin email-link and password sign-in, managing admins, codes, join link and QR, blank Word form upload and Form view, email and PayNow (team writes, admin ticks and deletes), lock (a closed phone drops it at its next open, server stamps, leave entry), offline edits heal, open reading asks, reload offline, same reading on both, log out)');
 } finally {
   await b.close();
 }
