@@ -267,8 +267,32 @@ try {
     await lockOnServer('gapuns01', false);
     await C.ctx.close();
   });
+  await doneIn('log out warns about an email and PayNow saved without signal', async () => {
+    // the entry waits in Firestore's own queue, not the outbox log out checks; saving it also marks the patient (pay_saved),
+    // whose save waits in the outbox, so log out names that patient and the entry survives (pinned 25 Oct 2026)
+    assert.ok((await seedPatient('gappay01', 'GAP-PAY', Date.now() - 60e3)).ok);
+    const D = await phone('DD'); const d = D.page;
+    await d.goto(BASE + '#/'); await listed(d, /GAP-PAY/);
+    await D.ctx.setOffline(true);
+    await d.goto(`${BASE}#/p/gappay01/pay`); await d.waitForSelector('#payemail');
+    await d.fill('#payemail', 'gap@example.com'); await d.fill('#paynow', '+65 9123 0000'); await d.click('#payf button[type=submit]');
+    await toastSays(d, /goes to the study admins when there is signal/);
+    const said = [];
+    d.on('dialog', x => { said.push(x.message()); said.length === 1 ? x.accept() : x.dismiss(); });
+    await d.goto(BASE + '#/settings'); await d.click('#leave');
+    await d.waitForFunction(() => document.querySelector('#leave')?.textContent === 'Log out' && !document.querySelector('#leave').disabled, null, { timeout: 20000 })
+      .catch(async () => { throw new Error('logged out anyway; dialogs: ' + JSON.stringify(said)); });
+    assert.equal(said.length, 2, 'a second warning: ' + JSON.stringify(said));
+    assert.match(said[1], /Not synced yet: GAP-PAY/, said[1]);
+    // signal back: the entry reaches the server (read past the rules)
+    await D.ctx.setOffline(false);
+    const end = Date.now() + 20000; let r;
+    while (Date.now() < end && !(r = await fetch(`${FS}/payments/gappay01`, { headers: OWNER })).ok) await new Promise(ok => setTimeout(ok, 300));
+    assert.ok(r.ok, 'the payment entry reached the server');
+    await D.ctx.close();
+  });
 } finally {
   await b.close();
 }
 if (errors.length) { console.error('prewarm sync gaps: FAIL\n- ' + errors.join('\n- ')); process.exit(1); }
-console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, older local value loses, locked with unsent changes, locked while a phone was closed (also with unsent changes), OK on a changed reading keeps the other phone\u2019s boxes)');
+console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, older local value loses, locked with unsent changes, locked while a phone was closed (also with unsent changes), OK on a changed reading keeps the other phone\u2019s boxes, log out with an unsent email and PayNow)');

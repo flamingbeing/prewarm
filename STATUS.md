@@ -21,6 +21,7 @@
 1. Check a real scan upload from a phone on prewarmstudy.anawj.com (the relay's settings are all set).
 
 ## Recently done
+- 25 Oct 2026: every Firebase call checked against app-sync: none outside `js/cloud.js`; patients go through app-sync, the rest stay direct on purpose (field-checked rules, not synced lists). New two-phone test: log out with an Email / PayNow saved without signal warns and keeps it.
 - 21 Oct 2026: imported from anawj-site; all prewarm tests pass here; cut-over done; first keyless rules deploy passed.
 
 ## Decisions (dated, one line each)
