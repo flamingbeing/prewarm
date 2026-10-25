@@ -18,7 +18,7 @@ import { lockLeave, statusInput } from './sync-rules.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 // the sync engine (patients): an exact version, precached by sw.js
-const SYNC = 'https://core.anawj.com/sync/0.4.1/index.js';
+const SYNC = 'https://core.anawj.com/sync/0.5.0/index.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -71,19 +71,26 @@ function makeEngine({ db, F, S, auth }) {
     onSnapshotMeta: (_coll, meta) => watchdog.heard(meta),
   });
   const stores = S.createStores({ prefix: 'prewarm-store:', colls: ['patients'], metaOnly: ['leaves'] });
+  // nothing-lost report (app-sync report.js): counts only (saves waiting over an hour, refused, in conflict, sync
+  // errors by code) and versions, at most once an hour and when the page is hidden; never a patient or an id
+  let appVersion = 'unknown';
+  import('https://core.anawj.com/update/0.2.0/register.js').then(m => m.version()).then(v => { if (v) appVersion = v; }).catch(() => {});
+  const report = S.createReport({ app: 'prewarm', version: () => appVersion, storage: (() => { try { return localStorage; } catch { return null; } })() });
+  report.start();
   // no recycle bin collection; leaves: patients locked since this phone's last sync (they left its query, which a
   // listener never hears of). Until every patient carries updatedAt (the backfill), opens read in full
   // a patient with saves not sent yet (waiting, refused or in conflict) that leaves the list (locked meanwhile) stays here
   const hub = S.createSyncHub({ openStore: stores.openStore, listen: fs.listen, fetchOne: fs.fetchOne, bin: null, feeds: { leaves: { patient: 'patients' } }, unstamped: 'full',
     unsent: (_scope, coll, id) => coll === 'patients' && queue.unsent('patient', id),
     onLeave: (_scope, coll, id) => { if (coll === 'patients') dispatchEvent(new CustomEvent('prewarm-sync-left', { detail: { id } })); },
-    onError: e => dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })) });
+    onError: e => { report.error(e?.code); dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })); } });
   S.replanOnWake(hub);
   const outbox = S.createOutbox({ name: 'prewarm-outbox' });
   const queue = S.createWriteQueue({
     store: outbox, getOwner: () => auth.currentUser?.uid || null,
     backend: (_owner, _kind, record, base, extra) => fs.commit('', 'patients', record, base, extra),
     online: () => navigator.onLine !== false,
+    report,
   });
   addEventListener('online', () => { queue.kick(); watchdog.event(); });
   addEventListener('pageshow', () => watchdog.event());

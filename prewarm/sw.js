@@ -10,7 +10,7 @@
 //   scan upload (/scan-api/), Cloudflare Access (/cdn-cgi/) and Firebase sign-in (/__/) steps, the update helper
 //   (update.html), sw.js itself, and Firebase traffic.
 
-const VERSION = 'prewarm-v83';
+const VERSION = 'prewarm-v84';
 const SHELL = [
   './', 'style.css', 'manifest.webmanifest', 'https://design.anawj.com/v1/tokens.css',
   'js/app.js', 'js/ui-core.js', 'js/ui-sync.js', 'js/series.js', 'js/ui-home.js', 'js/ui-patient.js', 'js/ui-alerts.js', 'js/ui-data.js', 'js/ui-forms.js',
@@ -19,17 +19,19 @@ const SHELL = [
   'js/docx-fill.js', 'js/wordform.js', 'js/wordview.js', 'js/scan.js', 'js/scan-geom.js', 'js/scan-imports.js', 'js/pay.js', 'js/sync-rules.js', 'js/vendor/jszip.min.js', 'js/vendor/docx-preview.min.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
   // the sync engine (app-sync), one exact version: without it nothing reaches the team
-  'https://core.anawj.com/sync/0.4.1/index.js',
-  'https://core.anawj.com/sync/0.4.1/src/sync.js',
-  'https://core.anawj.com/sync/0.4.1/src/writes.js',
-  'https://core.anawj.com/sync/0.4.1/src/conflict.js',
-  'https://core.anawj.com/sync/0.4.1/src/store.js',
-  'https://core.anawj.com/sync/0.4.1/src/outbox.js',
-  'https://core.anawj.com/sync/0.4.1/src/watchdog.js',
-  'https://core.anawj.com/sync/0.4.1/src/persist.js',
-  'https://core.anawj.com/sync/0.4.1/src/status.js',
-  'https://core.anawj.com/sync/0.4.1/src/firestore.js',
-  'https://core.anawj.com/sync/0.4.1/src/forget.js',
+  'https://core.anawj.com/sync/0.5.0/index.js',
+  'https://core.anawj.com/sync/0.5.0/src/sync.js',
+  'https://core.anawj.com/sync/0.5.0/src/writes.js',
+  'https://core.anawj.com/sync/0.5.0/src/conflict.js',
+  'https://core.anawj.com/sync/0.5.0/src/store.js',
+  'https://core.anawj.com/sync/0.5.0/src/outbox.js',
+  'https://core.anawj.com/sync/0.5.0/src/watchdog.js',
+  'https://core.anawj.com/sync/0.5.0/src/persist.js',
+  'https://core.anawj.com/sync/0.5.0/src/status.js',
+  'https://core.anawj.com/sync/0.5.0/src/firestore.js',
+  'https://core.anawj.com/sync/0.5.0/src/forget.js',
+  'https://core.anawj.com/sync/0.5.0/src/registry.js',
+  'https://core.anawj.com/sync/0.5.0/src/report.js',
   // the page side of app-update (one exact version), so the app opens offline
   'https://core.anawj.com/update/0.2.0/register.js',
 ];
