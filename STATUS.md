@@ -1,7 +1,8 @@
 # Status
 
 ## Now
-- Patients sync through app-sync 0.4.0 and the update module 0.2.0 since 25 Oct 2026: the stamp only moves forward
+- Patients sync through app-sync 0.4.1 and the update module 0.2.0 since 25 Oct 2026 (#18 on 0.4.0, then 0.4.1:
+  a leave entry no longer drops a patient that still has unsent saves): the stamp only moves forward
   (app-sync does it), an admin's lock writes its leave entry in the same transaction (no lock without its entry), a
   patient locked while it still has unsent saves stays on the phone with a warning, the sync chip says "Checking"
   until the server has answered and "at risk" only while offline, log out goes through `forgetDevice`, and an update
@@ -22,6 +23,6 @@
 - 21 Oct 2026: imported from anawj-site; all prewarm tests pass here; cut-over done; first keyless rules deploy passed.
 
 ## Decisions (dated, one line each)
-- 25 Oct 2026: app-sync 0.4.0 + update 0.2.0; updates no longer reload mid-entry (was instant since 24 Oct).
+- 25 Oct 2026: app-sync 0.4.0 (then 0.4.1) + update 0.2.0; updates no longer reload mid-entry (was instant since 24 Oct).
 - 24 Oct 2026: patients sync through app-sync (outbox, delta listener, server-side field merge); every patient write must change `updatedAt` (old app versions are refused until they update; their changes stay on the phone and heal after).
 - 21 Oct 2026: rules deploy uses keyless OIDC sign-in, not a stored service-account key.
