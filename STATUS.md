@@ -24,6 +24,7 @@
 1. Check a real scan upload from a phone on prewarmstudy.anawj.com (the relay's settings are all set).
 
 ## Recently done
+- 25 Oct 2026: pinned to app-sync 0.6.3, pin only (no `backend.held`: `patients` has a `backend.merge`, so held conflicts are inert there; patients already merge field by field in `mergeShared`; no rules change).
 - 25 Oct 2026: app-sync 0.6.0 createApp; `.wrangler/` and `firestore-debug.log` out of git; `.starter.json` (adopted
   app-starter). Next for links: join and share links by Worker custom token (app-devkit `custom-token.js`), which needs a
   service account secret on the Worker and a rules change.
