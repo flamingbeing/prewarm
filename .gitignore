@@ -1,1 +1,3 @@
 .devkit/
+.wrangler/
+firestore-debug.log

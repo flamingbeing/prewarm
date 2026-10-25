@@ -1,6 +1,9 @@
 # Status
 
 ## Now
+- Patients sync through app-sync 0.6.0 `createApp` since 25 Oct 2026 (the engine wiring in `js/cloud.js` is now
+  config: same outbox and device-copy names, the lock's leave entry through `backend.onCommit`); log out still runs
+  `forgetDevice` on createApp's parts (the screen warns about unsent saves first).
 - Nothing-lost report on (app-sync 0.5.0, 25 Oct 2026): counts only, hourly at most, to core.anawj.com/report.
 - Patients sync through app-sync 0.4.1 and the update module 0.2.0 since 25 Oct 2026 (#18 on 0.4.0, then 0.4.1:
   a leave entry no longer drops a patient that still has unsent saves): the stamp only moves forward
@@ -21,6 +24,9 @@
 1. Check a real scan upload from a phone on prewarmstudy.anawj.com (the relay's settings are all set).
 
 ## Recently done
+- 25 Oct 2026: app-sync 0.6.0 createApp; `.wrangler/` and `firestore-debug.log` out of git; `.starter.json` (adopted
+  app-starter). Next for links: join and share links by Worker custom token (app-devkit `custom-token.js`), which needs a
+  service account secret on the Worker and a rules change.
 - 25 Oct 2026: every Firebase call checked against app-sync: none outside `js/cloud.js`; patients go through app-sync, the rest stay direct on purpose (field-checked rules, not synced lists). New two-phone test: log out with an Email / PayNow saved without signal warns and keeps it.
 - 21 Oct 2026: imported from anawj-site; all prewarm tests pass here; cut-over done; first keyless rules deploy passed.
 
