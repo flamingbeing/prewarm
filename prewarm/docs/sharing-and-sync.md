@@ -5,7 +5,8 @@ Team sharing (Firestore), admin sign-in, locking, the PACU nurse link, updates a
 - **Log out** (replaced "Stop sharing on this phone" and the admins' "Sign out"): warns first (how many
   patients will go), tries to sync for a few seconds, and warns again naming any patient with changes the server
   hasn't confirmed (`pending`, kept across reloads; cleared when Firestore's waitForPendingWrites resolves). Then it
-  leaves the team / signs out, deletes every patient and Firestore's offline copy on the phone, keeps settings, reloads.
+  leaves the team / signs out, deletes every patient, the outbox and Firestore's offline copy on the phone (app-sync
+  `forgetDevice`), keeps settings, reloads.
 - **Admin screen:** the blank Word form card is at the bottom.
 - **Admin join codes**: the code is shown big; tapping it copies it. "New code" is a small link
   and warns first: the old code, link and QR stop working for new phones; phones already in stay in (use Remove).
@@ -15,7 +16,10 @@ Team sharing (Firestore), admin sign-in, locking, the PACU nurse link, updates a
 - **Locking**: a study admin taps "Select to lock" on the home page, picks patients (or "All
   but <latest>": everyone except the most recently edited), then Lock / Unlock. A locked patient is hidden from team
   phones completely: the rules let members read only `locked == false` records, their query asks for that, and a
-  patient that leaves the query is deleted from the phone (it comes back when unlocked). Admins (anyone in demo mode)
+  patient that leaves the query is deleted from the phone (it comes back when unlocked), unless it still has saves the
+  server never took: then it stays, with a warning (app-sync `unsent` / `onLeave`). The lock writes
+  `leaves/patient:{id}` in the same transaction (app-sync 0.4.0 `onCommit`), so a phone that was closed drops the
+  patient at its next open. Admins (anyone in demo mode)
   open it read only (body.ro). Locked records are read only for everyone; an admin can only change `lock` / `locked`.
   `locked` (bool) mirrors `lock.on` on every record; older records got it from each phone's one-off resend
   (`resync2`), and stay hidden from members until then. Lock icon: an inline SVG padlock, no emoji.

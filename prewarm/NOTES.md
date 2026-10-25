@@ -46,13 +46,15 @@ are in the owner's private notes.
 - **Testing sharing:** `tools/test-rules.sh` (rules, 52 checks) and `tools/test-prewarm-sync.sh` (two phones in a
   browser against the local Firestore and Auth emulators, `?emulator` on localhost only). Never the live project.
 - No hand bump of `VERSION`: the deploy stamps it with a hash of the SHELL files (`tools/stamp-versions.mjs`; AGENTS.md).
+- **Updates wait for a quiet moment** (app-update 0.2.0, 25 Oct 2026): the take-over reload waits while a reading is half
+  entered, a sheet or question is open, someone is typing or saves are sending (`js/sync-rules.js` `reloadOk`), and is
+  tried again when the tab is hidden or shown, the screen changes, or the last save has gone.
 ### The app version starts with the date
-Settings (under Refresh now) shows "App version 2026-10-14 (3f9a2c1d)": the day (Singapore time) of the last commit that touched
-a file the version hash covers, then the hash. `tools/stamp-versions.mjs` builds it at deploy (`prewarm-2026-10-14-3f9a2c1d`, the
-saved copy's name); only prewarm is dated (`DATED` in the script, add an app name to extend). The date moves only when the
-files do, so phones don't see extra updates; the Pages workflow now checks out full history (`fetch-depth: 0`) for that
-(without history the script uses today's date). The base in `sw.js` stays `prewarm-v79`: bump it only when the worker's own
-logic changes, as before. Test tap guard: after a pad closes, a tap within 48 px for 0.7 s is swallowed (the sync test waits).
+Settings (under Refresh now) shows "App version 2026-10-14 (3f9a2c1d)": the day (Singapore time) of the app folder's last
+commit, then the hash. `tools/stamp-versions.mjs` (app-update's, since 25 Oct 2026) builds it at deploy
+(`prewarm-v83-2026-10-14-3f9a2c1d`, the saved copy's name); the deploy checks out full history (`fetch-depth: 0`) for that.
+The design kit's moving address gets a new hash every deploy, so every deploy is an update. The base in `sw.js`
+(`prewarm-v83`): bump it only when the worker's own logic changes, as before. Test tap guard: after a pad closes, a tap within 48 px for 0.7 s is swallowed (the sync test waits).
 
 ### No breaking changes
 "This is highly important app, it must stay up, so let's skip making breaking changes." Prewarm holds live study data: change it

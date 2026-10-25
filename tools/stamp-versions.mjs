@@ -1,67 +1,59 @@
-// Gives each app's service worker a VERSION that changes whenever its files do, at deploy time only (the deploy
-// build runs it; never committed), so PRs don't touch sw.js for a version bump and two sessions on one app don't
-// collide on that line.
-// 'example-v1' becomes 'example-2026-10-14-3f9a2c1d': the day (Singapore time) of the last commit that touched a file
-// the hash covers, then a hash of every file the app can serve: its whole folder (the service worker serves any
-// same-origin file cache-first and keeps it until VERSION changes, so SHELL alone isn't enough) plus SHELL files
-// outside it. Tests, tools and notes are left out. Without git history the date is today's.
-// It also writes the sw.js MANIFEST line (app-update): a hash per SHELL file, so a phone fetches only the changed
-// ones. An exact-pin address (a /x.y.z/ in the path) is 'pinned'; another site's /v1/-style address gets this
-// deploy's hash, so it is fetched again on every deploy.
-// Run: node tools/stamp-versions.mjs [--check]   (--check prints the versions without writing, and fails when a
-// SHELL file is missing: the install is all or nothing, so one missing file would stop every phone's update)
+// Deploy stamp for an app that uses app-update: reads sw.js, hashes every file in its SHELL list, and writes
+//   const VERSION = '<app>-<date>-<hash8>';     (the plain '<app>-v1' is kept in git; the deploy stamps it)
+//   const MANIFEST = {"./":"<hash12>", "app.js":"<hash12>", ...};
+// back into sw.js. Copy this file into the app's tools/ folder.
+//   node tools/stamp-versions.mjs <dir> [--sw sw.js] [--date YYYY-MM-DD]   stamp (deploy build)
+//   node tools/stamp-versions.mjs <dir> --check                           only check that every SHELL file exists (CI)
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const write = !process.argv.includes('--check');
-const RE = /const VERSION = '([^']+)'/;
-const MANIFEST_RE = /^const MANIFEST = .*;$/m;
-const sha12 = buf => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
-const lastChanged = files => {
-  const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Singapore' });
-  try {
-    const out = execFileSync('git', ['log', '-1', '--format=%cd', '--date=format-local:%Y-%m-%d', '--', ...files.map(f => path.relative(ROOT, f))],
-      { cwd: ROOT, env: { ...process.env, TZ: 'Asia/Singapore' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    return /^\d{4}-\d{2}-\d{2}$/.test(out) ? out : today();
-  } catch { return today(); }
-};
-const SKIP = /(^|\/)(test|tools|node_modules|\.[^/]+)(\/|$)|\.md$/;
-const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(d => {
-  const f = path.join(dir, d.name);
-  if (SKIP.test(path.relative(ROOT, f))) return [];
-  return d.isDirectory() ? walk(f) : [f];
-});
+const sha = buf => crypto.createHash('sha256').update(buf).digest('hex');
+const STAMP = /-(\d{4}-\d{2}-\d{2}-)?[0-9a-f]{8}$/;
+// only an exact-version address on core.anawj.com never changes; any other cross-site file (e.g. design.anawj.com/v1/)
+// may change under the same address, so it gets a new hash every deploy and the phones fetch it again
+const PINNED = /^https:\/\/core\.anawj\.com\/[a-z0-9-]+\/\d+\.\d+\.\d+\//;
+const sgtDay = t => new Date(new Date(t).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+const lastChange = dir => { try { return execFileSync('git', ['log', '-1', '--format=%cI', '--', '.'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch (e) { return null; } };
 
-for (const app of fs.readdirSync(ROOT).filter(d => fs.existsSync(path.join(ROOT, d, 'sw.js')))) {
-  const swPath = path.join(ROOT, app, 'sw.js');
-  const sw = fs.readFileSync(swPath, 'utf8');
-  const m = sw.match(RE);
-  if (!m) { console.error(`stamp: ${app}/sw.js has no VERSION`); process.exitCode = 1; continue; }
-  const base = m[1].replace(/-\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/, '').replace(/-[0-9a-f]{8}$/, '');   // already stamped: stamp again from the base
-  const shellSrc = sw.match(/const SHELL = \[([\s\S]*?)\];/)?.[1] || '';
-  const shell = [...shellSrc.matchAll(/'([^']+)'/g)].map(x => x[1]).filter(f => f !== './' && !/^https?:/.test(f)).map(f => path.join(ROOT, app, f));   // kit files from another host aren't hashed
-  const files = [...new Set([...walk(path.join(ROOT, app)).filter(f => f !== swPath), ...shell])].sort();
-  const missing = shell.filter(f => !fs.existsSync(f) || !fs.statSync(f).isFile());
-  if (missing.length) { console.error(`stamp: ${app}/sw.js SHELL lists files that don't exist: ${missing.map(f => path.relative(ROOT, f)).join(', ')}`); process.exitCode = 1; continue; }
-  const plain = sw.replace(RE, `const VERSION = '${base}'`).replace(MANIFEST_RE, 'const MANIFEST = {};');
-  const hash = crypto.createHash('sha256');
-  hash.update(plain);
-  for (const f of files) { hash.update('\0' + path.relative(ROOT, f) + '\0'); if (fs.existsSync(f)) hash.update(fs.readFileSync(f)); }
-  const h8 = hash.digest('hex').slice(0, 8);
-  const version = `${base.replace(/-v\d+$/, '')}-${lastChanged(files)}-${h8}`;
-  let out = plain.replace(RE, `const VERSION = '${version}'`);
-  if (MANIFEST_RE.test(plain)) {
-    const manifest = {};
-    for (const u of [...shellSrc.matchAll(/'([^']+)'/g)].map(x => x[1])) {
-      if (/^https?:/.test(u)) manifest[u] = /\/\d+\.\d+\.\d+\//.test(new URL(u).pathname) ? 'pinned' : `deploy-${h8}`;
-      else manifest[u] = sha12(fs.readFileSync(path.join(ROOT, app, u === './' ? 'index.html' : u.split(/[?#]/)[0])));
-    }
-    out = out.replace(MANIFEST_RE, () => `const MANIFEST = ${JSON.stringify(manifest)};`);
+// now, gitDate: for tests (gitDate: the last git change of dir as ISO, null for none)
+export function stamp({ dir, sw = 'sw.js', date, write = true, now = Date.now(), gitDate }) {
+  const swPath = path.join(dir, sw);
+  let src = fs.readFileSync(swPath, 'utf8');
+  const version = src.match(/const VERSION = '([^']+)'/)?.[1];
+  if (!version) throw new Error(`${sw}: no VERSION constant`);
+  const shellSrc = src.match(/const SHELL = \[([\s\S]*?)\];/)?.[1];
+  if (shellSrc == null) throw new Error(`${sw}: no SHELL list`);
+  if (!/^const MANIFEST = .*;$/m.test(src)) throw new Error(`${sw}: no 'const MANIFEST = {};' line`);
+  const shell = [...shellSrc.matchAll(/'([^']+)'/g)].map(m => m[1]);
+  const manifest = {};
+  for (const u of shell) {
+    if (PINNED.test(u)) { manifest[u] = 'pinned'; continue; }   // an exact-pin address (core.anawj.com/update/0.2.0/...): its version is its identity
+    if (/^https?:\/\//.test(u)) { manifest[u] = sha(`${u} ${now}`).slice(0, 12); continue; }   // mutable: per deploy
+    const rel = u === './' ? 'index.html' : u.split('?')[0].split('#')[0];
+    const file = path.join(dir, rel);
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) throw new Error(`${sw}: SHELL lists ${u}, but ${rel} does not exist`);
+    manifest[u] = sha(fs.readFileSync(file)).slice(0, 12);
   }
-  if (write) fs.writeFileSync(swPath, out);
-  console.log(`${app}: ${version}`);
+  if (!write) return { version, manifest };
+  const base = version.replace(STAMP, '');
+  const line = JSON.stringify(manifest);
+  const plain = src.replace(/const VERSION = '[^']+'/, `const VERSION = '${base}'`).replace(/^const MANIFEST = .*;$/m, 'const MANIFEST = {};');
+  const hash8 = sha(plain + line).slice(0, 8);
+  if (gitDate === undefined) gitDate = lastChange(dir);
+  const day = date || sgtDay(gitDate || now);   // the last git change of the app, in SGT
+  src = src.replace(/const VERSION = '[^']+'/, `const VERSION = '${base}-${day}-${hash8}'`).replace(/^const MANIFEST = .*;$/m, () => `const MANIFEST = ${line};`);
+  fs.writeFileSync(swPath, src);
+  return { version: `${base}-${day}-${hash8}`, manifest };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const a = process.argv.slice(2), dir = a.find(x => !x.startsWith('--') && a[a.indexOf(x) - 1] !== '--sw' && a[a.indexOf(x) - 1] !== '--date');
+  const opt = n => (a.includes(n) ? a[a.indexOf(n) + 1] : undefined);
+  try {
+    const r = stamp({ dir: dir || '.', sw: opt('--sw'), date: opt('--date'), write: !a.includes('--check') });
+    console.log(a.includes('--check') ? `stamp-versions: ok (${Object.keys(r.manifest).length} shell files exist)` : `stamp-versions: ${r.version}`);
+  } catch (e) { console.error('stamp-versions: ' + e.message); process.exit(1); }
 }

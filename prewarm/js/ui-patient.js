@@ -4,7 +4,8 @@ import { setVal, val, isGone } from './store.js';
 import { openKeypad } from './keypad.js';
 import { $, GROUPS, NS, askTime, cleanup, esc, field, fitNums, fromMin, go, header, hooks, lockTaps, nowHM, paint, patients, read, render, route, saveAll, setLeaveGuard, settings, sid, sidL, toMin, toast, view, write } from './ui-core.js';
 import * as cloud from './cloud.js';
-import { failed, pending, refreshNow, set, sharing, sync, syncText } from './ui-sync.js';
+import { failed, heardYet, pending, refreshNow, set, sharing, sync, syncText } from './ui-sync.js';
+import { chipState } from './sync-rules.js';
 import { SANE, colsFor, dueOf, expected, noWarming, nowFor, pointsFor, savedAt, setTempNA } from './series.js';
 import { declined } from './ui-home.js';
 import { INTRAOP_Q, PACU_Q, disableSealed, doneHtml, gaps, gapsHtml, haemoState, sealNote, sealedBy, sealedMsg, signoffClick, signoffHtml, startAlerts, vitalsCollected } from './ui-alerts.js';
@@ -74,18 +75,13 @@ function skippedBefore(p, id) {
   return i < 0 ? [] : evs.slice(0, i).filter(x => !val(p, x)).map(evLabel);
 }
 // app-bar sync status (owner, 13 Oct 2026, instead of the Log shortcut): Synced / N waiting / Offline / Phone only; a tap runs Refresh now
+// the words are in sync-rules.js chipState; app-sync's status rules add at-risk (the browser may clear this phone's
+// storage, said only while offline), stale (the team isn't being heard) and unknown (not heard since the app opened)
 function syncChipState() {
-  if (!sharing()) return ['Local', 'this phone', 'local', 'Data stays on this phone: not shared with a team'];
-  const n = Object.keys(pending).map(id => patients[id]).filter(p => p && !isGone(p)).length;
-  const bad = Object.keys(failed).map(id => patients[id]).filter(p => p && !isGone(p));
-  if (bad.length) return [`${bad.length} not saved`, 'tap for why', 'bad', bad.map(p => `${sid(p)}: ${failed[p.id]}`).join('; ')];
-  // app-sync's status rules: at-risk (the browser may clear this phone's storage), stale (the team isn't being heard)
-  const st = cloud.status()?.state;
-  if (n && st === 'at-risk') return [`${n} at risk`, 'not sent', 'bad', `${n} patient${n === 1 ? '' : 's'} not sent yet, and this browser may clear its storage: get signal, or add the app to the home screen`];
-  if (n) return [`${n} waiting`, 'to send', 'wait', `${n} patient${n === 1 ? '' : 's'} not sent to the team yet`];
-  if (!navigator.onLine) return ['Offline', 'no signal', 'wait', 'No signal: changes send when it returns'];
-  if (st === 'stale') return ['Checking', 'tap to refresh', 'wait', 'The team’s changes haven’t come through lately: tap to refresh'];
-  return ['Synced', 'with team', 'ok', syncText()];
+  if (!sharing()) return chipState({ sharing: false });
+  const waiting = Object.keys(pending).map(id => patients[id]).filter(p => p && !isGone(p)).length;
+  const bad = Object.keys(failed).map(id => patients[id]).filter(p => p && !isGone(p)).map(p => [sid(p), failed[p.id]]);
+  return chipState({ sharing: true, waiting, bad, st: cloud.status({ confirmed: heardYet() })?.state, online: navigator.onLine, text: syncText() });
 }
 export function paintSyncChip() {
   const el = $('#syncchip'); if (!el) return;

@@ -18,7 +18,7 @@ repo; never copy anything from there into this repo, a PR or an issue (neutral p
 - **Vital app (live study data):** full tests before merging (below), and nothing merged while the owner says a case
   is being collected. Fake data only in tests and screenshots.
 - The service worker's `VERSION` stays plain (`prewarm-vN`); the Workers Builds build command stamps it per deploy
-  (`node tools/stamp-versions.mjs`). Don't commit a stamped one.
+  (`node tools/stamp-versions.mjs prewarm`, app-update's tool). Don't commit a stamped one.
 - The design kit loads from `https://design.anawj.com/v1/` (another repo); don't copy it in.
 - `worker/scan.js` relays scan photos to the study computer behind Cloudflare Access. Its settings (`ACCESS_TEAM`,
   `SCAN_ACCESS_AUD`, `SCAN_ORIGIN`, `SCAN_CLIENT_ID`, `SCAN_CLIENT_SECRET`) live in the Cloudflare dashboard, never here.
