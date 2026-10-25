@@ -1,6 +1,7 @@
 # Status
 
 ## Now
+- Nothing-lost report on (app-sync 0.5.0, 25 Oct 2026): counts only, hourly at most, to core.anawj.com/report.
 - Patients sync through app-sync 0.4.1 and the update module 0.2.0 since 25 Oct 2026 (#18 on 0.4.0, then 0.4.1:
   a leave entry no longer drops a patient that still has unsent saves): the stamp only moves forward
   (app-sync does it), an admin's lock writes its leave entry in the same transaction (no lock without its entry), a
