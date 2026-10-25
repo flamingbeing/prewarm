@@ -17,7 +17,8 @@ Team sharing (Firestore), admin sign-in, locking, the PACU nurse link, updates a
   but <latest>": everyone except the most recently edited), then Lock / Unlock. A locked patient is hidden from team
   phones completely: the rules let members read only `locked == false` records, their query asks for that, and a
   patient that leaves the query is deleted from the phone (it comes back when unlocked), unless it still has saves the
-  server never took: then it stays, with a warning (app-sync `unsent` / `onLeave`). The lock writes
+  server never took: then it stays, with a warning (app-sync `unsent` / `onLeave`; since 0.4.1 also when its leave
+  entry reaches a phone that was closed). The lock writes
   `leaves/patient:{id}` in the same transaction (app-sync 0.4.0 `onCommit`), so a phone that was closed drops the
   patient at its next open. Admins (anyone in demo mode)
   open it read only (body.ro). Locked records are read only for everyone; an admin can only change `lock` / `locked`.

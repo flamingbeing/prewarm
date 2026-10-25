@@ -231,8 +231,44 @@ try {
     await listed(c2, /GAP-OLD/);
     await C.ctx.close();
   });
+  await doneIn('a patient locked while a phone with its unsent changes is closed stays there with a warning', async () => {
+    // app-sync 0.4.1: a leave entry for a patient with saves not sent keeps it (0.4.0 dropped it, change and all)
+    assert.ok((await seedPatient('gapuns01', 'GAP-UNS', Date.now() - 2 * 3600e3)).ok);
+    const C = await phone('CC'); const c = C.page;
+    await c.goto(BASE + '#/'); await listed(c, /GAP-UNS/);
+    // the phone says it has no signal from here on (its listener still hears the server), so the save stays unsent
+    await C.ctx.addInitScript(() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }));
+    await c.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }));
+    await c.goto(BASE + '#/p/gapuns01/form/preop'); await c.waitForSelector('#f-age');
+    await c.fill('#f-age', '61'); await c.keyboard.press('Tab'); await c.waitForTimeout(800);
+    await c.goto(BASE + '#/'); await listed(c, /GAP-UNS[\s\S]*Not sent yet/);
+    await c.waitForTimeout(1000); await c.close();
+    await lockOnServer('gapuns01', true);
+    assert.ok((await leaveOnServer('gapuns01', Date.now())).ok);
+    const c2 = await C.ctx.newPage();
+    c2.on('pageerror', e => errors.push('CC: ' + e.message));
+    await c2.addInitScript(() => { window.__toasts = []; new MutationObserver(() => { const t = document.querySelector('#toast'); if (t && !t.hidden && t.textContent) window.__toasts.push(t.textContent); }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true }); });
+    await c2.goto(BASE + '#/'); await c2.waitForSelector('body[data-cloud=ready]');
+    await c2.waitForFunction(() => window.__toasts.some(t => /GAP-UNS was locked by the study admin before your last changes reached the team/.test(t)), null, { timeout: 25000 })
+      .catch(async () => { throw new Error('no lock warning; toasts: ' + JSON.stringify([...new Set(await c2.evaluate(() => window.__toasts))]) + ' | list ' + (await c2.textContent('.list').catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)); });
+    await c2.waitForTimeout(3000);
+    assert.match(await c2.textContent('.list'), /GAP-UNS/, 'the patient stays on the phone');
+    assert.equal(await stored(c2, 'gapuns01', 'age'), '61', 'with the unsent change');
+    const kept = await c2.evaluate(async () => {
+      for (const { name } of await indexedDB.databases()) {
+        if (!/^prewarm-store:/.test(name)) continue;
+        const db = await new Promise((ok, no) => { const r = indexedDB.open(name); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+        for (const s of [...db.objectStoreNames].filter(n => n === 'patients')) { const v = await new Promise(ok => { const r = db.transaction(s).objectStore(s).get('gapuns01'); r.onsuccess = () => ok(r.result); r.onerror = () => ok(null); }); if (v) { db.close(); return true; } }
+        db.close();
+      }
+      return false;
+    });
+    assert.ok(kept, 'the sync engine\u2019s copy keeps it too');
+    await lockOnServer('gapuns01', false);
+    await C.ctx.close();
+  });
 } finally {
   await b.close();
 }
 if (errors.length) { console.error('prewarm sync gaps: FAIL\n- ' + errors.join('\n- ')); process.exit(1); }
-console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, older local value loses, locked with unsent changes, locked while a phone was closed, OK on a changed reading keeps the other phone\u2019s boxes)');
+console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, older local value loses, locked with unsent changes, locked while a phone was closed (also with unsent changes), OK on a changed reading keeps the other phone\u2019s boxes)');

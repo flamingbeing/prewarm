@@ -18,7 +18,7 @@ import { lockLeave, statusInput } from './sync-rules.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 // the sync engine (patients): an exact version, precached by sw.js
-const SYNC = 'https://core.anawj.com/sync/0.4.0/index.js';
+const SYNC = 'https://core.anawj.com/sync/0.4.1/index.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -48,7 +48,7 @@ async function start() {
 // listens by updatedAt until every patient has serverAt (tools/backfill-server-at.mjs) and the rules require it.
 // app-sync 0.4.0 (25 Oct 2026): the stamp only moves forward (max(now, the server copy's + 1), in the transaction), an
 // admin's lock writes its leave entry in the same transaction, and a patient that leaves the list while it still has
-// saves not sent stays on this phone and is reported (prewarm-sync-left).
+// saves not sent stays on this phone and is reported (prewarm-sync-left); since 0.4.1 also when its leave entry arrives.
 let engine = null;
 const listeners = new Set();   // watchPatients callbacks, so the watchdog can start them again
 function makeEngine({ db, F, S, auth }) {
