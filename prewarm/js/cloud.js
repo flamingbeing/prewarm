@@ -18,7 +18,7 @@ import { lockLeave, statusInput } from './sync-rules.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 // the sync engine (patients): an exact version, precached by sw.js
-const SYNC = 'https://core.anawj.com/sync/0.6.0/index.js';
+const SYNC = 'https://core.anawj.com/sync/0.6.3/index.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -41,7 +41,7 @@ async function start() {
   return fb;
 }
 
-// ---- the sync engine (app-sync createApp since 0.6.0, 25 Oct 2026): patients only. Every save goes to an outbox on
+// ---- the sync engine (app-sync createApp since 0.6.0, 25 Oct 2026; pinned to 0.6.3): patients only. Every save goes to an outbox on
 // this phone first, then to the server one at a time, merged there field by field (store.js mergeShared), so a save
 // never waits in Firestore's own queue and is never lost with its cache. Opens listen only for patients changed since
 // the last sync, with a copy of the list on the phone. Members, codes, admins, forms, payments, PACU links and shares
