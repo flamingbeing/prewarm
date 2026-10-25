@@ -11,7 +11,7 @@ Tick one off by adding the test and deleting its row. Tests use fake data only.
 | Fixed behaviour | Covered now by | Why no test yet |
 |---|---|---|
 | Double tap on a time box is ignored | `edge.e2e.mjs` block T (Save), `gaps.e2e.mjs` (comfort answer) | The time pad's Now button sits away from the time boxes, so a double tap on it cannot land on the next box; nothing to assert. Re-check if the pad moves. |
-| "Update taken in another tab" (`controllerchange` while a reading is half typed) asks before reloading | `gaps.e2e.mjs` covers the "Update available" button with a real service worker | The other-tab path needs a second tab taking the update; same `afterAsking` call, not tested on its own. |
+| An update waits while a reading is half entered, a sheet is open or saves are sending (app-update `canReload`) | `gaps.e2e.mjs` 1 (no reload while typing, with a real service worker); `sync-rules.test.mjs` (`reloadOk`) | The other states share the same `reloadOk` call; not each tested with a real worker. |
 
 ## Doc lines out of date (fix the doc, no test needed)
 

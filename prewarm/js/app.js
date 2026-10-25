@@ -3,7 +3,8 @@
 // shell, and the first screen.
 import { isGone } from './store.js';
 import * as cloud from './cloud.js';
-import { $, DEMO, NS, esc, patients, render, settings, shared } from './ui-core.js';
+import { $, DEMO, NS, esc, leaveGuard, patients, render, saveAll, settings, shared, view } from './ui-core.js';
+import { reloadOk } from './sync-rules.js';
 import { pending, setSw, setUpdates, sharing, swReg } from './ui-sync.js';
 import './series.js';
 import './ui-home.js';
@@ -64,13 +65,24 @@ async function moveCheck() {
 if (ON_OLD_ADDRESS) setTimeout(moveCheck, 1500);
 
 // ---------- offline shell and updates: the shared update module (app-update)
-// A new version installs in the background and takes over at once; the page reloads once (register.js; the owner chose
-// instant updates, 24 Oct 2026, so a half-typed reading is not waited for). The browser looks for a new version on every
-// return to the front and every 3 h while open, and Refresh now asks too. Loaded with import() so a blocked
+// A new version installs in the background and takes over; the page reloads once (register.js), but not while a reading
+// is half entered, a sheet or question is open, someone is typing or saves are still sending (app-update 0.2.0
+// canReload, 25 Oct 2026; sync-rules.js reloadOk): it is tried again when the tab is hidden or shown, the screen
+// changes, or the last save has gone (ui-sync.js). The browser looks for a new version on every return to the front,
+// on coming back online and every 3 h while open, and Refresh now asks too. Loaded with import() so a blocked
 // core.anawj.com never stops the app; offline it comes from the saved copy (sw.js SHELL).
+const canReload = () => reloadOk({
+  guard: !!leaveGuard?.(), dialogOpen: !!document.querySelector('dialog[open]'),
+  typing: view.contains(document.activeElement) && document.activeElement.matches('input, textarea, select'),
+  pending: Object.keys(pending).length + (cloud.enabled ? cloud.pendingCount() : 0),
+});
 if ('serviceWorker' in navigator && !DEMO) {
-  setUpdates(import('https://core.anawj.com/update/0.1.0/register.js')
-    .then(async m => { setSw(await m.register({ app: 'prewarm', sw: 'sw.js' })); addEventListener('online', () => swReg?.update().catch(() => {})); return m; })
+  setUpdates(import('https://core.anawj.com/update/0.2.0/register.js')
+    .then(async m => {
+      setSw(await m.register({ app: 'prewarm', sw: 'sw.js', canReload, beforeReload: () => saveAll() }));
+      addEventListener('hashchange', () => m.retryUpdate());
+      return m;
+    })
     .catch(() => null));
 }
 

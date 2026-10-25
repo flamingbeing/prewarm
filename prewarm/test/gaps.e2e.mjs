@@ -36,7 +36,7 @@ const preop = async pg => { await pg.click('#haemolink'); await pg.click('.links
 const stored = (pg, id, k) => pg.evaluate(([i, k]) => JSON.parse(localStorage.getItem('prewarm-demo:patients'))[i].f[k]?.v ?? null, [id, k]);
 
 // 1. a new version takes over at once and the app reloads once by itself (app-update, owner 24 Oct 2026: instant, no
-// banner), and the version line shows the running version. Not in demo mode, so this phone runs the real service worker
+// banner; since 25 Oct not while someone is typing), and the version line shows the running version. Not in demo mode, so this phone runs the real service worker
 // against a small server of the repo whose sw.js can change version (and skips the design kit, which the test machine
 // may not reach). The core (core.anawj.com/update/) must be reachable.
 jobs.push(() => tryit(async () => {
@@ -76,6 +76,20 @@ jobs.push(() => tryit(async () => {
     await pg.waitForSelector('#appver');
     await pg.waitForFunction(() => /v-second/.test(document.querySelector('#appver')?.textContent || ''), null, { timeout: 5000 })
       .then(() => log(true, 'the new version runs'), async () => log(false, 'the new version runs: ' + await pg.textContent('#appver')));
+    // app-update 0.2.0 canReload (25 Oct 2026): while someone is typing, the take-over waits; it reloads once the
+    // screen changes (the same holds for a half-entered reading, an open sheet or saves sending: sync-rules.js)
+    await pg.waitForSelector('#me'); await pg.focus('#me'); await pg.keyboard.type('Q');
+    // (the module's one-reload-per-take-over guard holds a second take-over within 20 s back: start that clock afresh)
+    await pg.evaluate(() => { window.__same = 1; sessionStorage.removeItem('app-update:reload:prewarm'); });
+    const typed = loads;
+    swv = 'v-third';
+    await pg.evaluate(() => navigator.serviceWorker.getRegistration().then(r => r.update()));
+    await pg.waitForTimeout(4000);
+    log(loads === typed && await pg.evaluate(() => window.__same === 1), 'no reload while typing: ' + (loads - typed));
+    await pg.evaluate(() => { document.activeElement.blur(); location.hash = '#/'; });
+    await pg.waitForFunction(() => window.__same === undefined, null, { timeout: 15000 }).then(() => log(true, 'the waiting update reloads once the screen changes'), () => log(false, 'the waiting update reloads once the screen changes'));
+    await pg.waitForTimeout(1500);
+    log(loads === typed + 1, 'one reload for the waiting update: ' + (loads - typed));
     // offline: the app still opens from the saved copy
     await ctx.setOffline(true);
     await pg.reload(); await pg.waitForSelector('a[href="#/settings"], #appver', { timeout: 10000 }).then(() => log(true, 'offline: the app opens'), () => log(false, 'offline: the app opens'));

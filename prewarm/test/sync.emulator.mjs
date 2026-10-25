@@ -363,6 +363,10 @@ try {
   assert.equal(lockedDoc.fields.locked.booleanValue, true);
   assert.ok(lockedDoc.fields.serverAt?.timestampValue, 'the patient carries serverAt');
   assert.ok(leave.fields.serverAt?.timestampValue, 'the leave entry carries serverAt');
+  // app-sync 0.4.0 onCommit: written in the lock's own transaction (same server time), so no phone ever sees the lock
+  // without its leave entry (before, a lost signal between the two left closed phones holding it until the weekly read)
+  assert.equal(leave.fields.serverAt.timestampValue, lockedDoc.fields.serverAt.timestampValue, 'the leave entry is written in the lock\u2019s transaction');
+  assert.ok(+leave.fields.deletedAt.integerValue > +lockedDoc.fields.updatedAt.integerValue, 'the leave entry is after the version it removes');
   assert.equal(leave.fields.site.stringValue, 'NUH');
   assert.equal(leave.fields.data.mapValue.fields.updatedAt.integerValue, lockedDoc.fields.updatedAt.integerValue, 'the leave entry names the locked version');
   // phone C opens again: the locked patient leaves it at once (it no longer waits for the weekly full read)
@@ -486,6 +490,18 @@ try {
   await Promise.all([bb.waitForNavigation({ timeout: 20000 }), bb.click('#leave')]);
   await bb.waitForSelector('body[data-cloud=ready]', { timeout: 20000 });
   assert.equal(await bb.$('.list a'), null, 'no patients on phone B');
+  // app-sync forgetDevice: the engine's copy of the list and the outbox hold nothing of the team's after a log out
+  const left = await bb.evaluate(async () => {
+    const out = [];
+    for (const { name } of await indexedDB.databases()) {
+      if (!/^prewarm-(store:|outbox)/.test(name)) continue;
+      const db = await new Promise((ok, no) => { const r = indexedDB.open(name); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); });
+      for (const s of db.objectStoreNames) { const n = await new Promise(ok => { const r = db.transaction(s).objectStore(s).count(); r.onsuccess = () => ok(r.result); r.onerror = () => ok(-1); }); if (n && !/meta/.test(s)) out.push(name + '/' + s + ':' + n); }
+      db.close();
+    }
+    return out;
+  });
+  assert.deepEqual(left, [], 'nothing of the team left on phone B');
   await bb.goto(BASE + '#/settings');
   await bb.waitForSelector('#code', { timeout: 15000 });
 

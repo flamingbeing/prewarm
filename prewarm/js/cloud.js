@@ -14,10 +14,11 @@
 
 import { FIREBASE_CONFIG } from './firebase-config.js';
 import { mergeShared } from './store.js';
+import { lockLeave, statusInput } from './sync-rules.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 // the sync engine (patients): an exact version, precached by sw.js
-const SYNC = 'https://core.anawj.com/sync/0.3.0/index.js';
+const SYNC = 'https://core.anawj.com/sync/0.4.0/index.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -45,6 +46,9 @@ async function start() {
 // a copy of the list on the phone. Members, codes, admins, forms, payments, PACU links and shares stay direct writes.
 // Server stamps (app-sync 0.3.0, 24 Oct 2026): every save also carries serverAt (the server's clock); the hub still
 // listens by updatedAt until every patient has serverAt (tools/backfill-server-at.mjs) and the rules require it.
+// app-sync 0.4.0 (25 Oct 2026): the stamp only moves forward (max(now, the server copy's + 1), in the transaction), an
+// admin's lock writes its leave entry in the same transaction, and a patient that leaves the list while it still has
+// saves not sent stays on this phone and is reported (prewarm-sync-left).
 let engine = null;
 const listeners = new Set();   // watchPatients callbacks, so the watchdog can start them again
 function makeEngine({ db, F, S, auth }) {
@@ -59,26 +63,26 @@ function makeEngine({ db, F, S, auth }) {
     // members: their hospital's unlocked patients and its leave entries (the rules refuse anything else); admins
     // (scope ''): every patient, locked too, so no leave entries (site '' matches none: they would drop locked ones)
     where: (site, coll) => coll === 'leaves' ? [['site', '==', site]] : site ? [['site', '==', site], ['locked', '==', false]] : [],
-    // the server's updatedAt goes on to stamp (below), so a save is always newer than the copy it replaces
-    merge: { patients: (current, record, _base, ops) => ({ ...mergeShared(current, record, ops), ...(current?.updatedAt ? { updatedAt: current.updatedAt } : {}) }) },
-    // never older than the server's copy, even from a phone whose clock is behind: an unlock must be newer than the
-    // lock's leave entry, or a member's phone would take the unlocked patient for the copy that left
-    stamp: doc => ({ ...doc, updatedAt: Math.max(Date.now(), (Number(doc.updatedAt) || 0) + 1) }),
+    // stamped by app-sync: never older than the server's copy, even from a phone whose clock is behind (an unlock must
+    // be newer than the lock's leave entry, or a member's phone would take the unlocked patient for the copy that left)
+    merge: { patients: (current, record, _base, ops) => mergeShared(current, record, ops) },
+    // an admin's lock: its leave entry in the same transaction (sync-rules.js lockLeave)
+    onCommit: ctx => ctx.coll === 'patients' ? lockLeave(ctx, S.leaveEntry) : [],
     onSnapshotMeta: (_coll, meta) => watchdog.heard(meta),
   });
   const stores = S.createStores({ prefix: 'prewarm-store:', colls: ['patients'], metaOnly: ['leaves'] });
   // no recycle bin collection; leaves: patients locked since this phone's last sync (they left its query, which a
   // listener never hears of). Until every patient carries updatedAt (the backfill), opens read in full
-  const hub = S.createSyncHub({ openStore: stores.openStore, listen: fs.listen, fetchOne: fs.fetchOne, bin: null, feeds: { leaves: { patient: 'patients' } }, unstamped: 'full', onError: e => dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })) });
+  // a patient with saves not sent yet (waiting, refused or in conflict) that leaves the list (locked meanwhile) stays here
+  const hub = S.createSyncHub({ openStore: stores.openStore, listen: fs.listen, fetchOne: fs.fetchOne, bin: null, feeds: { leaves: { patient: 'patients' } }, unstamped: 'full',
+    unsent: (_scope, coll, id) => coll === 'patients' && queue.unsent('patient', id),
+    onLeave: (_scope, coll, id) => { if (coll === 'patients') dispatchEvent(new CustomEvent('prewarm-sync-left', { detail: { id } })); },
+    onError: e => dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })) });
   S.replanOnWake(hub);
   const outbox = S.createOutbox({ name: 'prewarm-outbox' });
   const queue = S.createWriteQueue({
     store: outbox, getOwner: () => auth.currentUser?.uid || null,
-    backend: async (_owner, _kind, record, base, extra) => {
-      const done = await fs.commit('', 'patients', record, base, extra);
-      if (done?.lock?.on && (extra?.ops || []).some(o => o?.lock)) await leaveFor(done);
-      return done;
-    },
+    backend: (_owner, _kind, record, base, extra) => fs.commit('', 'patients', record, base, extra),
     online: () => navigator.onLine !== false,
   });
   addEventListener('online', () => { queue.kick(); watchdog.event(); });
@@ -87,15 +91,7 @@ function makeEngine({ db, F, S, auth }) {
   setInterval(() => watchdog.check(), 30000);
   let persisted = true;
   S.persistGuard().then(r => { persisted = !r.supported || r.persisted; queue.kick(); });
-  // an admin's lock, once on the server: a leave entry carrying the locked version, so a member's phone that was
-  // closed drops the patient at its next open (an unlock is newer, so it shows again). Lost signal: the save stays
-  // queued and is sent again (the lock is already there, so only this is written). Refused (rules not deployed yet):
-  // the lock still stands, and closed phones drop the patient at their weekly full read, as before.
-  async function leaveFor(rec) {
-    try { await F.setDoc(F.doc(db, 'leaves', 'patient:' + rec.id), { ...S.leaveEntry('patient', rec), site: rec.site, ...await fs.stampFields() }); }
-    catch (e) { if (e?.code === 'unavailable' || e?.code === 'deadline-exceeded') throw e; console.warn('Leave entry not written', e); }
-  }
-  return { hub, queue, stores, watchdog, S, persisted: () => persisted };
+  return { hub, queue, stores, watchdog, fs, S, persisted: () => persisted };
 }
 // the write queue's saves for this phone's account (activated once signed in), or null before the engine started
 export async function queue() {
@@ -103,12 +99,16 @@ export async function queue() {
   if (auth.currentUser) await engine.queue.activate(auth.currentUser.uid);
   return engine.queue;
 }
-// the sync status rules (app-sync status.js): { state, count }, state one of attention, at-risk, offline, saving, stale, synced
-export function status() {
+// the sync status rules (app-sync status.js): { state, count }, state one of attention, at-risk, offline, saving, stale,
+// unknown, synced. confirmed: the team's list has come from the server since this page opened (else unknown, not synced)
+export function status({ confirmed = true } = {}) {
   if (!engine) return null;
   const q = engine.queue;
-  return engine.S.syncStatus({ online: navigator.onLine !== false, pending: q.pending(), attention: engine.S.attentionCount(q.entries()), persisted: engine.persisted(), stale: engine.watchdog.stale() });
+  return engine.S.syncStatus(statusInput({ online: navigator.onLine !== false, pending: q.pending(), attention: engine.S.attentionCount(q.entries()), persisted: engine.persisted(), stale: engine.watchdog.stale(), confirmed }));
 }
+// saves in this phone's outbox still being sent (0 before the engine started): an update's reload waits for them. Not
+// queue.pending(), which also counts refused saves and conflicts: those wait for a person, and would hold an update for good
+export const pendingCount = () => engine ? engine.queue.entries().filter(x => x.state === 'pending').length : 0;
 // "Refresh now": a moment the phone came back, for the watchdog (listen again if the server went quiet)
 export function nudge() { if (engine) { engine.queue.kick(); engine.watchdog.event(); } }
 
@@ -190,15 +190,16 @@ export async function flushed(ms = 5000) {
   const fsDone = Promise.race([F.waitForPendingWrites(db).then(() => true), new Promise(ok => setTimeout(() => ok(false), ms))]);
   return (await q.flush(ms)) && await fsDone;
 }
-// Log out: leave the team (or sign out an admin) and delete Firestore's copy of the study data on this phone.
-// The page reloads afterwards (Firestore can't be used again once its copy is cleared).
-export async function logOut() {
-  const { db, F } = await sdk();
-  const { hub, queue: q, stores } = engine;
-  // the outbox's saves for this account (the screen warned about unsent ones), the engine's copy of the list, and Firestore's
-  try { await hub.stopAll(); await q.forget(); await stores.wipeStores(); } catch { /* the page reloads; a store left is opened again empty-handed */ }
-  try { await leave(); } catch { /* signed out below anyway */ }
-  try { await F.terminate(db); await F.clearIndexedDbPersistence(db); } catch { /* cleared on the next start */ }
+// Log out: leave the team (or sign out an admin) and delete the study data on this phone (app-sync forgetDevice): stop
+// listening, sign out, then the engine's copy of the list, the outbox's saves for this account (the screen warned about
+// unsent ones), Firestore's own copy, and the app's (extra). The page reloads afterwards (Firestore can't be used again
+// once its copy is cleared). A step that fails doesn't stop the others.
+export async function logOut({ extra = null } = {}) {
+  await sdk();
+  const { hub, queue: q, stores, fs, S } = engine;
+  // signing out comes before the wipe (it needs Firestore, which the wipe ends); it goes ahead even if leaving fails
+  const proceed = async () => { try { await leave(); } catch { /* signed out anyway, or removed already */ } return true; };
+  return S.forgetDevice({ hub, stores, queue: q, proceed, keep: [], clearBackendCache: fs.clearCache, extra });
 }
 
 // Admins sign in with an emailed link (no Google pop-up: phone browsers block the pop-up's helper page on

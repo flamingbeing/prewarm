@@ -38,6 +38,8 @@ function fromOutbox() {
   }
   const was = Object.keys(pending).length, before = unsentIds();
   pending = p; failed = f;
+  // everything sent: an update that waited for it can take over now (app.js canReload)
+  if (was && !Object.keys(p).length) updates?.then(m => m?.retryUpdate?.()).catch(() => {});
   if (was && !Object.keys(p).length && heard) synced(); else showSync();
   // the list's "Not sent yet" / "Not saved to the team" lines follow the outbox, not only the sync line: a send that
   // brought nothing new from the server (e.g. resyncOnce on a phone that just joined) left the line up (24 Oct 2026)
@@ -46,6 +48,7 @@ function fromOutbox() {
 const unsentIds = () => Object.keys(pending).sort() + '|' + Object.keys(failed).sort();
 const setFailed = (id, reason) => { if (reason) appFailed[id] = reason; else if (id in appFailed) delete appFailed[id]; else return; write('failed', appFailed); fromOutbox(); };
 let heard = false;   // the team's list has come from the server since this page opened
+export const heardYet = () => heard;
 // when this phone was last fully in step with the server (nothing waiting to send, team's changes received)
 export let lastSync = read('lastSync', 0);
 function synced() {
@@ -100,8 +103,8 @@ export async function logOut(btn) {
     btn.disabled = false; btn.textContent = 'Log out'; return;
   }
   shared.unwatch?.();
-  await cloud.logOut();
-  try { for (const k of Object.keys(localStorage)) if (k.startsWith(NS) && k !== NS + 'settings') localStorage.removeItem(k); } catch { /* storage blocked */ }
+  // the app's own copies go last (app-sync forgetDevice's extra): patients, pending lists, drafts; settings stay
+  await cloud.logOut({ extra: () => { for (const k of Object.keys(localStorage)) if (k.startsWith(NS) && k !== NS + 'settings') localStorage.removeItem(k); } });
   location.replace(location.pathname + location.search + '#/');
   location.reload();
 }
@@ -235,6 +238,15 @@ function redraw() {
   if (/^\/$|^\/p\/\w+$|\/sheet$/.test(h) && !typing && !leaveGuard?.()) render();
   else { shared.stale = true; const b = $('#fresh'); if (b) b.hidden = false; }
 }
+// a member's phone: a patient locked by an admin while this phone still has saves the server never took (waiting, or
+// refused by the lock) stays here (app-sync keeps it out of the removals and reports it): say so once per patient
+const leftWarned = new Set();
+if (cloud.enabled) addEventListener('prewarm-sync-left', e => {
+  const p = patients[e.detail?.id];
+  if (!p || shared.admin || leftWarned.has(p.id)) return;
+  leftWarned.add(p.id);
+  toast(`${sid(p)} was locked by the study admin before your last changes reached the team. They stay on this phone: ask the admin to unlock it.`);
+});
 let guestSubs = [];
 // watch() runs from sign-in (onUser) and from the join at once: only the newest call keeps its listener and reports.
 // An older one, started before the join reached the server, was refused and showed "Not allowed" (24 Oct 2026)
@@ -291,7 +303,7 @@ function watchGuests() {
       let changed = false;
       for (const r of list) if (take(r)) changed = true;
       if (meta.removed.length && patients[id] && !pending[id]) { delete patients[id]; changed = true; }
-      if (meta.server) synced();
+      if (meta.server) { heard = true; synced(); }
       watchPacu();
       if (changed) redraw();
     }, e => {
