@@ -7,7 +7,7 @@ Lasting rules, owner preferences and lessons (never task chatter), and how to te
   only the old-address forward in `prewarm/`; change the app only here.
 - Tests import JSZip from `prewarm/js/vendor/jszip.min.js`; `prewarm/js/vendor/package.json` marks that folder as
   CommonJS so Node can load it (this repo's `package.json` says `"type": "module"`).
-- The service worker's SHELL lists the design kit's `tokens.css` by full address; `tools/check.mjs` skips such
+- The service worker's SHELL lists the design kit's `tokens.css` by full address; `.devkit/tools/check.mjs` skips such
   entries. `tools/stamp-versions.mjs` is app-update's (copied from app-sync `update/tools/`, run as
   `node tools/stamp-versions.mjs prewarm`): only exact-version `core.anawj.com/<name>/<x.y.z>/` addresses count as
   pinned; any other address on another site (the design kit's `/v1/`) gets a new hash every deploy.

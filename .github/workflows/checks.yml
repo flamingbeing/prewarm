@@ -14,7 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: flamingbeing/app-devkit/setup-node@v1.1.0
+      - uses: flamingbeing/app-devkit/setup-tools@v1.6.0
       - name: Repo check
-        run: node tools/check.mjs
+        run: node .devkit/tools/check.mjs
       - name: Unit tests
         run: for f in prewarm/test/*.test.mjs; do echo "== $f"; node "$f" || exit 1; done

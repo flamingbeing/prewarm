@@ -12,7 +12,7 @@ if ! curl -s -o /dev/null http://localhost:${PORT:-8080}/prewarm/; then
   python3 -m http.server ${PORT:-8080} >/dev/null 2>&1 & SERVER=$!; trap 'kill $SERVER 2>/dev/null' EXIT; sleep 1
 fi
 start=$(date +%s)
-node tools/check.mjs || fail=1
+node .devkit/tools/check.mjs || fail=1
 for f in prewarm/test/*.test.mjs; do node "$f" || fail=1; done
 # browser tests in parallel; a hung one is stopped after 10 minutes
 pids=()
