@@ -1,5 +1,5 @@
-# The repo check (service workers, wrangler settings, Worker tests) and the prewarm unit tests, on every PR and on
-# main. The browser tests and rules tests stay with the session that changes the app (AGENTS.md).
+# The repo check (service workers, wrangler settings, Worker tests), the prewarm unit tests and the Firestore rules in
+# the emulator, on every PR and on main. The browser tests stay with the session that changes the app (AGENTS.md).
 name: Checks
 
 on:
@@ -19,3 +19,19 @@ jobs:
         run: node .devkit/tools/check.mjs
       - name: Unit tests
         run: for f in prewarm/test/*.test.mjs; do echo "== $f"; node "$f" || exit 1; done
+
+  rules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flamingbeing/app-devkit/setup-node@v1.1.0
+      - name: Cache rules test tools and emulator
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/anawj-rules
+            ~/.cache/firebase/emulators
+          key: rules-${{ runner.os }}-${{ hashFiles('tools/test-rules.sh') }}
+      - name: Firestore rules (local emulator, demo project)
+        run: bash tools/test-rules.sh
