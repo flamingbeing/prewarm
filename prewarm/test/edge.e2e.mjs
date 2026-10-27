@@ -182,11 +182,13 @@ jobs.push(() => tryit(async () => {
     await pg.waitForTimeout(500);
   };
   await swipe(320, 80);
-  log(pg.url().endsWith('/haemo'), 'swipe left opens BP, HR, BIS: ' + pg.url());
+  log(pg.url().endsWith('/iotemp'), 'swipe left opens Intraop temp: ' + pg.url());
+  await swipe(320, 80);
+  log(pg.url().endsWith('/haemo'), 'swipe left again opens BP, HR, BIS: ' + pg.url());
   const order = await pg.evaluate(() => { const a = document.querySelector('[data-sign="haemo"], [data-unsign="haemo"]'), b = document.querySelector('a[href$="/form/intraop"]'); return !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)); });
   log(order, 'BP, HR, BIS tick above Intra-op details');
   await swipe(80, 320);
-  log(/#\/p\/\w+$/.test(pg.url()), 'swipe right back to Temperatures: ' + pg.url());
+  log(pg.url().endsWith('/iotemp'), 'swipe right back to Intraop temp: ' + pg.url());
   log(await pg.evaluate(() => getComputedStyle(document.body).overscrollBehaviorY) === 'none', 'pull-to-refresh off');
   await ctx.close();
 }));
@@ -296,7 +298,7 @@ jobs.push(() => tryit(async () => {
   await pg.click('#seldone');
   await pg.locator('.list a').first().click(); await pg.waitForSelector('#clock');
   await pg.evaluate(() => { Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); }; });
-  await pg.click('.tabs2 a:first-child'); await pg.waitForSelector('.chip[data-sat="consent_st"]'); // consent is first on the Induction room tab
+  await pg.click('#prewarmlink'); await pg.waitForSelector('.chip[data-sat="consent_st"]'); // consent is first on the Induction room tab
   await pg.click('.chip[data-sat="consent_st"][data-v="1"]'); await pg.waitForTimeout(300);
   log(/couldn’t store the last change/.test(await pg.textContent('#storefull').catch(() => '')), 'storage full stays on screen');
   await ctx.close();
@@ -449,7 +451,7 @@ jobs.push(() => tryit(async () => {
   log(await pg.inputValue('[data-in="sbp"]') === '133', 'typed BP back after the app closed: ' + await pg.inputValue('[data-in="sbp"]'));
   log(/brought back/.test(await pg.textContent('#toast')), 'and it says so');
   // a temperature being typed (keyboard still up) when the app closes
-  await pg.click('#templink'); await pg.waitForSelector('dialog.ask[open]'); await pg.click('dialog.ask [data-a="drop"]');
+  await pg.click('#iotemplink'); await pg.waitForSelector('dialog.ask[open]'); await pg.click('dialog.ask [data-a="drop"]');
   await pg.waitForSelector('.num[data-type="core"]'); await pg.waitForTimeout(800);
   await pg.click('.num[data-type="core"]'); await pg.waitForSelector('dialog.kp input.num');
   await pg.keyboard.type('372'); await pg.keyboard.press('Enter'); await pg.waitForTimeout(300);
@@ -458,7 +460,7 @@ jobs.push(() => tryit(async () => {
   // Don't save: gone when reopened
   await pg.click('#haemolink'); await pg.waitForSelector('dialog.ask[open]'); await pg.click('dialog.ask [data-a="drop"]');
   await pg.waitForSelector('[data-in="sbp"]');
-  await pg.click('#templink'); await pg.waitForSelector('.num[data-type="core"]');
+  await pg.click('#iotemplink'); await pg.waitForSelector('.num[data-type="core"]');
   log((await pg.textContent('.num[data-type="core"]')).trim() !== '37.2', 'Don\'t save forgets it: ' + await pg.textContent('.num[data-type="core"]'));
   await ctx.close();
 }));
@@ -479,12 +481,12 @@ jobs.push(() => tryit(async () => {
   log(sv.y + sv.height <= 844, 'Others: Save on screen without scrolling: ' + (sv.y + sv.height));
   await pg.goto('http://localhost:8080/prewarm/?demo#/new'); await pg.waitForSelector('#sid');
   await pg.fill('#sid', 'NOPW-X'); await pg.click('.seg .chip[data-v="3"]'); await pg.click('button[type=submit]');
-  await pg.waitForSelector('.tabs2');
+  await pg.waitForSelector('main .ptabs');
   // no pre-warming: Start opens the Induction room tab (consent and the before-surgery comfort question), and it stays
   // the opening tab until the patient is in OT
   await pg.waitForSelector('.nopw');
   const nopwUrl = pg.url();
-  log(/Induction room/.test(await pg.textContent('.tabs2 [aria-selected="true"]')), 'no pre-warming: Start opens the Induction room tab');
+  log(/Induction room/.test(await pg.textContent('main .ptabs [aria-selected="true"]')), 'no pre-warming: Start opens the Induction room tab');
   log(!!await pg.$('.chip[data-sat="consent_st"]'), 'consent is asked on the Induction room tab');
   log(/No pre-warming/.test(await pg.textContent('.nopw')) && !await pg.$('#save'), 'Induction room tab says no pre-warming, nothing to save');
   await pg.click('.chip[data-sat="consent_st"][data-v="1"]'); await pg.waitForTimeout(800);
@@ -492,11 +494,11 @@ jobs.push(() => tryit(async () => {
   log(!/Prewarm|Temp Prewarm/.test(await pg.textContent('.next').catch(() => '')), 'no pre-warming: no pre-warming countdown in the top bar');
   await pg.click('.chip[data-sat="sat_pre"][data-v="2"]'); await pg.waitForTimeout(100);
   const home = nopwUrl.split('#')[0], pid = nopwUrl.match(/#\/p\/(\w+)/)[1];
-  await pg.goto(home + '#/'); await pg.goto(home + '#/p/' + pid); await pg.waitForSelector('.tabs2');
-  log(/Induction room/.test(await pg.textContent('.tabs2 [aria-selected="true"]')), 'no pre-warming still opens on Induction room once comfort is answered');
+  await pg.goto(home + '#/'); await pg.goto(home + '#/p/' + pid); await pg.waitForSelector('main .ptabs');
+  log(/Induction room/.test(await pg.textContent('main .ptabs [aria-selected="true"]')), 'no pre-warming still opens on Induction room once comfort is answered');
   await pg.evaluate(i => { const k = 'prewarm-demo:patients', all = JSON.parse(localStorage.getItem(k)); all[i].f.ev_ot = { v: '08:00', t: Date.now(), by: 'T' }; localStorage.setItem(k, JSON.stringify(all)); }, pid);
-  await pg.goto(home + '#/'); await pg.reload(); await pg.goto(home + '#/p/' + pid); await pg.waitForSelector('.tabs2');
-  log(/Intra-op/.test(await pg.textContent('.tabs2 [aria-selected="true"]')), 'opens on Intra-op once In OT is logged');
+  await pg.goto(home + '#/'); await pg.reload(); await pg.goto(home + '#/p/' + pid); await pg.waitForSelector('main .ptabs');
+  log(/Intraop temp/.test(await pg.textContent('main .ptabs [aria-selected="true"]')), 'opens on Intraop temp once In OT is logged');
   await ctx.close();
 }));
 // Y. Reset this subject asks twice (Cancel on the second keeps everything); PACU view opens only the PACU page;

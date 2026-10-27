@@ -86,7 +86,7 @@ try {
   assert.ok(!(await page.evaluate(() => JSON.stringify(localStorage))).includes('pt@example.com'), 'the email is never kept in the patient record');
   assert.equal(await page.$('.chip[data-sat="sat_post"]'), null, 'post-op comfort is not on the temperatures screen');
   assert.equal(await page.$('.links a[href$="/form/satis"]'), null, 'no separate satisfaction screen');
-  assert.match(await page.textContent('.tabs2 [aria-selected="true"]'), /Induction room/);
+  assert.match(await page.textContent('main .ptabs [aria-selected="true"]'), /Induction room/);
   assert.match(await page.textContent('.badge'), /10 min pre-warming/, 'group shows with the pre-warming temperatures');
   // Gown on is still empty, so it asks first (a stray tap shouldn't log out of order)
   let asked = ''; page.once('dialog', d => { asked = d.message(); d.accept(); });
@@ -202,7 +202,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.chip[data-c="set"][data-v="NA"]')?.getAttribute('aria-pressed') === 'true', null, { timeout: 5000 });
 
   // intra-op tab: group not shown
-  await page.click('.tabs2 a:has-text("Intra-op")');
+  await page.click('#iotemplink');
   await page.waitForFunction(() => /Baseline/.test(document.querySelector('.tp')?.textContent || ''));
   assert.doesNotMatch(await page.textContent('main'), /10 min pre-warming/, 'group hidden outside the pre-warming temperatures');
   // an empty room temp fills 20.0 when its card is tapped
@@ -237,9 +237,11 @@ try {
   assert.doesNotMatch(await got.file('docProps/core.xml').async('string'), /Test Author/, 'file details removed');
   await page.goBack();
 
-  // two tabs under the key times: Temperatures and Others; the other forms' links are on both
-  assert.equal(await page.getAttribute('#templink', 'aria-selected'), 'true');
-  assert.ok(await page.$('.links a[href$="/form/intraop"]'), 'other forms are on the Temperatures tab too');
+  // three tabs under the key times (Induction room, Intraop temp, BP, HR, BIS), no subtabs; the other forms' links are on all
+  assert.deepEqual(await page.$$eval('main .ptabs a', a => a.map(x => x.textContent.trim())), ['Induction room', 'Intraop temp', 'BP, HR, BIS']);
+  assert.equal(await page.$('.tabs2'), null, 'no subtabs under the tabs');
+  assert.equal(await page.getAttribute('#iotemplink', 'aria-selected'), 'true');
+  assert.ok(await page.$('.links a[href$="/form/intraop"]'), 'other forms are on the Induction room tab too');
   await page.click('#haemolink');
   await page.waitForSelector('input[data-in="sbp"]');
   assert.equal(await page.getAttribute('#haemolink', 'aria-selected'), 'true');
@@ -263,6 +265,15 @@ try {
   await page.evaluate(h => { location.replace(h); }, `#/p/${pid3}/data/day1`); await page.waitForSelector('details.sect');
   assert.equal(await page.$$eval('details.sect', x => x.length), 2, 'POD1 page: chart review and analgesia');
   assert.equal(await page.$$eval('details.sect[open]', x => x.length), 2, 'POD1 page: both sections open');
+  assert.deepEqual(await page.$$eval('.podtabs a', a => a.map(x => x.textContent.trim())), ['POD1', 'POD2', 'Discharge'], 'shortcuts to POD1, POD2 and Discharge');
+  assert.equal(await page.getAttribute('.podtabs a[aria-current="page"]', 'href').then(h => h.endsWith('/data/day1')), true, 'the open page is marked');
+  // presets fill the free-text dose box (same stored text)
+  await page.click('.chip[data-f="d1_pcm"][data-v="1"]'); await page.waitForSelector('#f-d1_pcm_dose'); await page.click('.fld:has(#f-d1_pcm_dose) .preset:has-text("Anarex")');
+  assert.equal(await page.inputValue('#f-d1_pcm_dose'), 'Anarex 2 tab tds', 'a preset fills the dose');
+  await page.click('.podtabs a:has-text("Discharge")'); await page.waitForSelector('[data-sign="dc"]');
+  assert.equal(await page.$('.presets'), null, 'no dose presets on the discharge page');
+  await page.click('.podtabs a:has-text("POD1")'); await page.waitForSelector('#f-d1_pcm_dose');
+  await page.goBack(); await page.goBack(); await page.waitForSelector('#f-d1_pcm_dose'); // keep the history as it was
   await page.evaluate(h => { location.replace(h); }, `#/p/${pid3}/data/day2`); await page.waitForSelector('details.sect');
   assert.deepEqual(await page.$$eval('details.sect', x => x.map(d => d.dataset.pg)), ['pod2', 'pod2an'], 'POD2 page: chart review and analgesia');
   assert.match(await page.textContent('[data-sign="pod2"]'), /Mark POD2 complete/);

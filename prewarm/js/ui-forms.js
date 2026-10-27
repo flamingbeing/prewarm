@@ -127,6 +127,8 @@ export function typedValue(f, raw) {
   return v;
 }
 const noFirst = opts => opts.some(o => o[1] === 'No') ? [...opts].sort((a, b) => (b[1] === 'No') - (a[1] === 'No')) : opts;
+// one-tap doses for the analgesia boxes (owner, 26 Oct 2026): they fill the same free-text box, so nothing new is stored
+export const DOSE_PRESETS = { pcm_dose: ['Paracetamol 1 g qds', 'Anarex 2 tab tds'], cox2_dose: ['Arcoxia 90 mg om'] };
 export function fieldHtml(f, get) {
   if (!f || !isShown(f, get)) return '';
   const v = get(f.id), idA = 'f-' + f.id;
@@ -142,8 +144,10 @@ export function fieldHtml(f, get) {
   if (f.long) return `<div class="fld wide"><label class="lab" for="${idA}">${esc(f.label)}</label>${hint}<textarea id="${idA}" data-f="${f.id}" rows="3" autocomplete="off">${esc(v ?? '')}</textarea></div>`;
   const mode = f.type === 'text' ? 'text' : f.type === 'int' ? 'numeric' : 'decimal';
   const type = f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : 'text';
+  const presets = f.type === 'text' ? DOSE_PRESETS[f.id.replace(/^d\d_/, '')] : null;
   return `<div class="fld"><label class="lab" for="${idA}">${esc(f.label)}${f.unit ? ` <small>${esc(f.unit)}</small>` : ''}</label>${hint}
-    <input id="${idA}" data-f="${f.id}" type="${type}" ${type === 'text' ? `inputmode="${mode}"` : ''} value="${esc(v ?? '')}" autocomplete="off"></div>`;
+    <input id="${idA}" data-f="${f.id}" type="${type}" ${type === 'text' ? `inputmode="${mode}"` : ''} value="${esc(v ?? '')}" autocomplete="off">${presets
+    ? `<div class="presets">${presets.map(x => `<button type="button" class="preset" data-preset-f="${f.id}" data-preset="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}</div>`;
 }
 function txTable(p) {
   const rows = [['rbc', 'RBC'], ['plt', 'Platelets'], ['ffp', 'FFP'], ['cryo', 'Cryo']];
