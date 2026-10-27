@@ -181,11 +181,13 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
   const main = s !== 'haemo';
   const def = SERIES[s], pts = pointsFor(p, s);
   header(sidL(p), '#/');
-  // two tabs under the bar (owner, 12 Oct 2026): temperatures, and BP / HR / BIS with the other forms; each warms up
-  // and pulses as its next reading falls due
-  // key times fill the top of the screen on both tabs; the tab bar sits under them (owner, 12 Oct 2026)
-  const ptabsHtml = () => `<nav class="ptabs" role="tablist" aria-label="Readings"><a role="tab" id="templink" href="#/p/${id}" aria-selected="${main}" data-state="${haemoState(p, defaultSeries(p))}">Temperatures</a>`
-    + `<a role="tab" id="haemolink" href="#/p/${id}/haemo" aria-selected="${!main}" data-state="${haemoState(p)}">BP, HR, BIS</a></nav>`;
+  // three tabs under the key times (owner, 12 Oct 2026; Temperatures split in two on 26 Oct 2026, no subtabs): Induction
+  // room, Intra-op temp, and BP / HR / BIS with the other forms; each warms up and pulses as its next reading falls due
+  // key times fill the top of the screen on every tab; the tab bar sits under them (owner, 12 Oct 2026)
+  const TABS = [['prewarm', 'Induction room'], ['iotemp', 'Intraop temp'], ['haemo', 'BP, HR, BIS']];
+  const tabHref = x => `#/p/${id}/${x}`;
+  const ptabsHtml = () => `<nav class="ptabs" role="tablist" aria-label="Readings">${TABS.map(([x, l]) =>
+    `<a role="tab" id="${x}link" href="${tabHref(x)}" aria-selected="${x === s}" data-state="${haemoState(p, x)}">${l}</a>`).join('')}</nav>`;
   const refreshBar = topBar(p, s, () => draw());
   // swipe left / right to change tab (owner, 12 Oct 2026); not from the timepoint strip or a box being typed in
   let sw = null;
@@ -195,8 +197,8 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
     const t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y, quick = Date.now() - sw.at < 700;
     sw = null;
     if (!quick || Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
-    if (dx < 0 && main) go(`#/p/${id}/haemo`);
-    else if (dx > 0 && !main) go('#/p/' + id);
+    const i = TABS.findIndex(([x]) => x === s), n = TABS[i + (dx < 0 ? 1 : -1)];
+    if (n) go(tabHref(n[0]));
   };
   view.addEventListener('touchstart', swStart, { passive: true });
   view.addEventListener('touchend', swEnd, { passive: true });
@@ -407,10 +409,7 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
     const btn = (x, cls, sym, word) => x
       ? `<a class="pn ${cls}" href="#/p/${id}/${s}/${x.key}" aria-label="${word}: ${esc(x.label)}">${sym}</a>`
       : `<span class="pn ${cls}" aria-hidden="true">${sym}</span>`;
-    return `<div class="nav2">${btn(pts[i - 1], 'prev', '‹', 'Previous')}<div class="mid">${main ? tabsHtml() : ''}${strip()}</div>${btn(pts[i + 1], 'next', '›', 'Next')}</div>`;
-  }
-  function tabsHtml() {
-    return `<div class="tabs2" role="tablist">${['prewarm', 'iotemp'].map(x => `<a role="tab" aria-selected="${x === s}" href="#/p/${id}/${x}">${x === 'prewarm' ? 'Induction room' : 'Intra-op'}</a>`).join('')}</div>`;
+    return `<div class="nav2">${btn(pts[i - 1], 'prev', '‹', 'Previous')}<div class="mid">${strip()}</div>${btn(pts[i + 1], 'next', '›', 'Next')}</div>`;
   }
   function draw() {
     const clean = base == null || snap() === base;
@@ -426,8 +425,7 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
     keep();
     const due = dueOf(p, s, pt);
     const grp = s === 'prewarm' ? `<span class="badge">${GROUPS.find(g => String(g[0]) === String(val(p, 'arm')))?.[1] || 'Group not set'}</span>` : '';
-    const reading = noPw ? `<div class="nav2"><span></span><div class="mid">${tabsHtml()}</div><span></span></div>
-      <p class="note nopw">No pre-warming: this patient is in the no pre-warming group, so there are no temperatures to take here. Intra-op temperatures are on the Intra-op tab.</p>` : `${navHtml()}
+    const reading = noPw ? `<p class="note nopw">No pre-warming: this patient is in the no pre-warming group, so there are no temperatures to take here. Intra-op temperatures are on the Intraop temp tab.</p>` : `${navHtml()}
       <div class="tp"><div><b>${pt.label}</b> ${grp}</div><div class="due" id="due">${due != null ? 'due ' + fromMin(Math.round(due)) : pt.key === 'base' ? (s === 'prewarm' ? '' : 'on arrival in OT') : pt.min != null ? `<span class="hint">Log ${s === 'prewarm' ? 'Prewarm on' : 'Induction'} first</span>` : ''}</div></div>
       <div class="${sealed() ? 'sealed' : ''}">${isSaved ? `<p class="muted small tight">Taken ${esc(savedAt(p, s, pt.key))}${p.f['at_' + s + '_' + pt.key]?.by ? ' (saved by ' + esc(p.f['at_' + s + '_' + pt.key].by) + ')' : ''} <button class="link" data-attime>Change time</button>. Changes save when you tap Save.</p>` : ''}
       <div class="board">${cols.map(card).join('')}</div>
@@ -611,8 +609,7 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
   // readings fall due (main screen)
   const hl = setInterval(() => {
     dueTick();
-    const a = $('#haemolink'); if (a) a.dataset.state = haemoState(p);
-    const tl = $('#templink'); if (tl) tl.dataset.state = haemoState(p, defaultSeries(p));
+    for (const [x] of TABS) { const a = $('#' + x + 'link'); if (a) a.dataset.state = haemoState(p, x); }
     const gp = $('#gaps'), h = gapsHtml(p);
     if (gp && gp.outerHTML !== h) { if (h) gp.outerHTML = h; else gp.remove(); }
     else if (!gp && h) $('[data-done], [data-undone]')?.closest('.sign')?.insertAdjacentHTML('beforebegin', h);

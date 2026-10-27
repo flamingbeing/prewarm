@@ -139,13 +139,6 @@ details.sect > .stack { margin-top: 4px; }
 .tchip.edit { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; border: 1px solid var(--navy); color: var(--ink); }
 .tchip.edit input { width: auto; flex: 1; padding: 4px 6px; }
 
-/* Pre-warming / Intra-op switch: navy underline tabs */
-.tabs2 { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
-.tabs2 a { white-space: nowrap; display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 4px 8px; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; }
-.tabs2 a[aria-selected="true"] { border-bottom-color: var(--navy); color: var(--ink); font-weight: 600; }
-.sect { margin: 0; }
-
-/* previous / next timepoint either side of the tabs and strip */
 .nav2 { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; gap: 4px; align-items: stretch; }
 .nav2 .mid { display: grid; gap: 4px; min-width: 0; align-content: end; }
 .pn { display: flex; align-items: center; justify-content: center; min-height: var(--tap); border-radius: var(--r); border: 1px solid var(--line); background: var(--card); color: var(--navy); font-size: 2rem; font-weight: 600; line-height: 1; text-decoration: none; touch-action: manipulation; }
@@ -284,11 +277,11 @@ body.ro main .k, body.ro main .num, body.ro main .chip, body.ro main .tchip, bod
 .sign.on small { display: block; font-weight: 400; color: var(--muted); }
 /* no pull-to-refresh: a pull while scrolling up shouldn't reload mid-case */
 html, body { overscroll-behavior-y: none; }
-/* the two tabs under the bar: temperatures, BP / HR / BIS */
-.ptabs:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 600px; margin: 0 auto; padding: 0 12px 5px; }
+/* the three tabs under the bar: Induction room, Intraop temp, BP / HR / BIS */
+.ptabs:not([hidden]) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 600px; margin: 0 auto; padding: 0 12px 5px; }
 /* on the patient screens the tab bar sits under the key times (owner, 12 Oct 2026) */
 main .ptabs:not([hidden]) { width: 100%; max-width: none; padding: 0; margin: 2px 0 0; }
-main .ptabs a { min-height: 34px; font-size: 15px; }
+main .ptabs a { min-height: 34px; font-size: 14px; padding: 0 4px; text-align: center; line-height: 1.15; }
 .note.nopw { margin-top: 4px; background: var(--card); border: 1px solid var(--line); color: var(--ink); }
 .ptabs a { display: grid; place-items: center; min-height: 32px; border-radius: var(--r); border: 1px solid var(--line); color: var(--navy); font-size: 14px; font-weight: 600; text-decoration: none; background: var(--card); }
 .ptabs a[aria-selected="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
@@ -617,3 +610,11 @@ button.scst-retake { width: 100%; min-height: var(--tap); margin-top: 4px; backg
 .paylist h3 { margin: 0 0 4px; }
 .payids { display: grid; gap: 2px; margin: 0 0 6px; word-break: break-all; }
 .paytick { margin-top: 6px; }
+
+/* shortcuts between POD1, POD2 and Discharge at the top of their pages (owner, 26 Oct 2026) */
+.podtabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 4px 0 8px; }
+.podtabs a { display: grid; place-items: center; min-height: 40px; border-radius: var(--r); border: 1px solid var(--line); color: var(--navy); font-size: 15px; font-weight: 600; text-decoration: none; }
+.podtabs a[aria-current="page"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+/* one-tap doses under an analgesia dose box */
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.preset { min-height: 34px; padding: 0 10px; border-radius: var(--r); border: 1px solid var(--line); background: var(--card); color: var(--navy); font-size: 14px; }

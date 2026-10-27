@@ -33,6 +33,7 @@ route(/^\/p\/(\w+)\/data(?:\/(day1|day2|dc))?$/, (id, day) => {
     const y = window.scrollY;
     const sl = sealedBy(p, SIGN);
     paint(`<p class="muted small">Usually from Epic or the chart, after the day of surgery. Fill in what you have; the rest stays blank.</p>
+      ${part.study ? '' : `<nav class="podtabs" aria-label="Chart review">${DATA_PARTS.slice(1).map(d => `<a href="#/p/${id}/${d.path}"${d === part ? ' aria-current="page"' : ''}>${d.short}</a>`).join('')}</nav>`}
       <div class="${sl ? 'sealed' : ''}">${part.study ? `<details class="sect" data-pg="study" ${closed.has('study') ? '' : 'open'}><summary><span>Subject ID and group</span><small>to correct a mistake</small></summary>
         <div class="stack">${fieldHtml(field('enrol_id'), get)}${fieldHtml(field('arm'), get)}</div></details>` : ''}
       ${part.pages.map(pg => `<details class="sect" data-pg="${pg}" ${closed.has(pg) ? '' : 'open'}><summary><span>${esc(PAGES.find(x => x.id === pg).title)}</span>
@@ -66,6 +67,11 @@ route(/^\/p\/(\w+)\/data(?:\/(day1|day2|dc))?$/, (id, day) => {
   };
   view.onclick = e => {
     if (e.target.closest('[data-sign], [data-unsign]')) return signoffClick(p, SIGN, e.target);
+    const pr = e.target.closest('.preset');
+    if (pr) {
+      if (sealedBy(p, SIGN)) return toast(sealedMsg(p, SIGN));
+      set(p, pr.dataset.presetF, pr.dataset.preset); return draw();
+    }
     const b = e.target.closest('.chip[data-f]');
     if (b && sealedBy(p, SIGN)) return toast(sealedMsg(p, SIGN));
     if (b) pick(b);
@@ -92,7 +98,7 @@ route(/^\/p\/(\w+)\/data(?:\/(day1|day2|dc))?$/, (id, day) => {
   };
   view.onkeydown = e => {
     if (e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
-    const fld = stopOf(e.target); if (!fld) return;
+    const fld = stopOf(e.target); if (!fld || e.target.closest('.preset')) return;
     const k = keyOf(fld), chip = e.target.closest('.chip');
     // date and time boxes keep their own arrow keys (they change the value)
     const arrows = chip || e.target.type === 'text';

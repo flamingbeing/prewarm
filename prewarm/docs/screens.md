@@ -56,9 +56,9 @@ How the patient screen, key times, sign-offs, forms and look work. Part of the n
   the bottom. In the patient list, tapping a completed patient warns first (amber row: who marked it and when); a
   second tap opens it. The Word form's sign-off lines use it on op-day pages with data that have no sign-off of their own. The
   per-section sign-offs stay on the BP / HR / BIS screen and the other forms.
-- **Patient screen layout**: key times at the top on both tabs, then the Temperatures / Others
+- **Patient screen layout**: key times at the top on every tab, then the Induction room / Intraop temp / BP, HR, BIS
   tab bar, then the tab's readings; the bottom part (Intra-op details, PACU, Perioperative data, Form / Sheet view,
-  Still to fill, Mark complete) is the same on both tabs. The no-pre-warming group keeps the Induction room tab
+  Still to fill, Mark complete) is the same on every tab. The no-pre-warming group keeps the Induction room tab
   (consent, comfort) with a note that there are no pre-warming temperatures. Intra-op time 0 is induction (`io_knife`, labelled Induction; the paper form's row reads
   "Knife-to-skin start time (Induction)").
 - **Three parts, reset, PACU view**: the patient screen has three bordered parts with their
@@ -84,11 +84,10 @@ How the patient screen, key times, sign-offs, forms and look work. Part of the n
   lavender once set (`.tchip.warm.set`: #ebe5f7, labels #4f2f86; was beige, too like the amber "due soon" alarm; light grey #e6e6e6 until tapped, labels #50565c); the
   other times stay blue. The time boxes are numbered in the order they happen (1 Gown on … 11 To ward; renumbered
   without the pre-warming ones for the no-pre-warming group), a small number in each box's top corner.
-- **Two tabs**: a thin tab bar under the top bar on the patient screen: **Temperatures** (the
-  main screen: times, pre-warming / intra-op temps, comfort, Form view / Sheet view) and **Others** (BP, HR, BIS,
+- **Three tabs** (Temperatures split in two on 26 Oct 2026, no subtabs): a thin tab bar under the key times on the patient screen: **Induction room** (pre-warming temps, consent, comfort), **Intraop temp** and **Others** (BP, HR, BIS,
   plus the Intra-op details and PACU boxes and a full-width **Perioperative data** box, formerly "Other data"). The tab you're not on warms up and pulses when its next
   reading falls due. "Still to fill" and Mark data collection as complete are on both tabs. On Others, the BP, HR, BIS tick sits right under the readings, above Intra-op details (it covers only the vitals).
-  Swipe left / right on either tab to switch. Pull-to-refresh is off (`overscroll-behavior-y: none`). Intra-op
+  Swipe left / right to move along the tabs. POD1, POD2 and Discharge pages have shortcuts to each other at the top; the paracetamol and COX-2 dose boxes have one-tap presets that fill the same text box. Pull-to-refresh is off (`overscroll-behavior-y: none`). Intra-op
   details, PACU and Perioperative data go back to the Others tab. Sign-offs name their section ("Mark BP, HR, BIS complete", "Mark PACU
   complete"…) and show a ticked green box with who and when once marked (`tickHtml`).
 - **Top bar**: the next thing to log and a countdown, centred between the title and the sync chip: the reading due most recently
