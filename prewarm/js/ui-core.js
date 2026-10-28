@@ -9,6 +9,10 @@ import { closeKeypad } from './keypad.js';
 export const DEMO = new URLSearchParams(location.search).has('demo');
 export const NS = DEMO ? 'prewarm-demo:' : 'prewarm:';
 export const $ = s => document.querySelector(s);
+// the app kit's theme (app-ui @core/theme, one exact version; sw.js keeps it offline): look A unless this phone picks
+// another in Settings, the study's navy as the accent. import() so a blocked core.anawj.com leaves the kit's plain CSS look
+export const KIT = 'https://core.anawj.com/ui/1.0.0-rc.19/';
+export const theme = import(KIT + 'theme/index.js').then(t => { t.applyTheme({ accent: '#002f6c' }); return t; }).catch(() => null);
 export const view = $('#view');
 export const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export const field = id => BY_ID[id] || EXTRA_BY_ID[id];
