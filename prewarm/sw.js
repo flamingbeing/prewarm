@@ -10,7 +10,7 @@
 //   scan upload (/scan-api/), Cloudflare Access (/cdn-cgi/) and Firebase sign-in (/__/) steps, the update helper
 //   (update.html), sw.js itself, and Firebase traffic.
 
-const VERSION = 'prewarm-v85';
+const VERSION = 'prewarm-v86';
 const SHELL = [
   './', 'style.css', 'manifest.webmanifest',
   'js/app.js', 'js/ui-core.js', 'js/ui-sync.js', 'js/series.js', 'js/ui-home.js', 'js/ui-patient.js', 'js/ui-alerts.js', 'js/ui-data.js', 'js/ui-forms.js',
