@@ -19,7 +19,7 @@ repo; never copy anything from there into this repo, a PR or an issue (neutral p
   is being collected. Fake data only in tests and screenshots.
 - The service worker's `VERSION` stays plain (`prewarm-vN`); the Workers Builds build command stamps it per deploy
   (`node tools/stamp-versions.mjs prewarm`, app-update's tool). Don't commit a stamped one.
-- The design kit loads from `https://design.anawj.com/v1/` (another repo); don't copy it in.
+- The UI kit loads from `https://core.anawj.com/ui/<exact version>/` (app-ui, another repo; pinned in `index.html`, `js/ui-core.js` KIT and `sw.js` SHELL, all three together); don't copy it in.
 - `worker/scan.js` relays scan photos to the study computer behind Cloudflare Access. Its settings (`ACCESS_TEAM`,
   `SCAN_ACCESS_AUD`, `SCAN_ORIGIN`, `SCAN_CLIENT_ID`, `SCAN_CLIENT_SECRET`) live in the Cloudflare dashboard, never here.
 - Firestore rules are in `prewarm/firestore.rules`; `.github/workflows/deploy-firestore-rules.yml` deploys them
