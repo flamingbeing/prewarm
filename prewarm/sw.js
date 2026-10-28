@@ -1,4 +1,4 @@
-// Offline app shell for the prewarming study app, on the shared update module (app-update 0.2.0: sw-core.js does the
+// Offline app shell for the prewarming study app, on the shared update module (app-sync's update core 1.5.1: sw-core.js does the
 // work; its README has the rules). The deploy stamps VERSION and MANIFEST (tools/stamp-versions.mjs); keep them plain
 // here ('prewarm-vN', {}). Change the vN only when this file's own logic changes.
 // - Install: every SHELL file or nothing (flaky hospital wifi: the phone keeps the old complete copy instead of an
@@ -18,27 +18,42 @@ const SHELL = [
   'js/keypad.js', 'js/schema.js', 'js/headers.js', 'js/store.js', 'js/xlsx.js', 'js/export.js', 'js/cloud.js', 'js/firebase-config.js', 'js/vendor/qrcode.js',
   'js/docx-fill.js', 'js/wordform.js', 'js/wordview.js', 'js/scan.js', 'js/scan-geom.js', 'js/scan-imports.js', 'js/pay.js', 'js/sync-rules.js', 'js/vendor/jszip.min.js', 'js/vendor/docx-preview.min.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
-  // the sync engine (app-sync), one exact version: without it nothing reaches the team
-  'https://core.anawj.com/sync/0.6.3/index.js',
-  'https://core.anawj.com/sync/0.6.3/src/sync.js',
-  'https://core.anawj.com/sync/0.6.3/src/writes.js',
-  'https://core.anawj.com/sync/0.6.3/src/conflict.js',
-  'https://core.anawj.com/sync/0.6.3/src/store.js',
-  'https://core.anawj.com/sync/0.6.3/src/outbox.js',
-  'https://core.anawj.com/sync/0.6.3/src/watchdog.js',
-  'https://core.anawj.com/sync/0.6.3/src/persist.js',
-  'https://core.anawj.com/sync/0.6.3/src/status.js',
-  'https://core.anawj.com/sync/0.6.3/src/firestore.js',
-  'https://core.anawj.com/sync/0.6.3/src/forget.js',
-  'https://core.anawj.com/sync/0.6.3/src/registry.js',
-  'https://core.anawj.com/sync/0.6.3/src/report.js',
-  'https://core.anawj.com/sync/0.6.3/src/app.js',
+  // the sync engine (app-sync: index.js and the app, auth and sync modules), one exact version: without it nothing reaches the team
+  'https://core.anawj.com/sync/1.5.1/index.js',
+  'https://core.anawj.com/sync/1.5.1/src/cache.js',
+  'https://core.anawj.com/sync/1.5.1/src/conflict.js',
+  'https://core.anawj.com/sync/1.5.1/src/firestore.js',
+  'https://core.anawj.com/sync/1.5.1/src/forget.js',
+  'https://core.anawj.com/sync/1.5.1/src/outbox.js',
+  'https://core.anawj.com/sync/1.5.1/src/persist.js',
+  'https://core.anawj.com/sync/1.5.1/src/registry.js',
+  'https://core.anawj.com/sync/1.5.1/src/replace.js',
+  'https://core.anawj.com/sync/1.5.1/src/report.js',
+  'https://core.anawj.com/sync/1.5.1/src/status.js',
+  'https://core.anawj.com/sync/1.5.1/src/store.js',
+  'https://core.anawj.com/sync/1.5.1/src/sync.js',
+  'https://core.anawj.com/sync/1.5.1/src/user.js',
+  'https://core.anawj.com/sync/1.5.1/src/watchdog.js',
+  'https://core.anawj.com/sync/1.5.1/src/writes.js',
+  'https://core.anawj.com/sync/1.5.1/app.js',
+  'https://core.anawj.com/sync/1.5.1/src/runner.js',
+  'https://core.anawj.com/sync/1.5.1/auth.js',
+  'https://core.anawj.com/sync/1.5.1/src/auth.js',
+  'https://core.anawj.com/sync/1.5.1/src/signin/anonymous.js',
+  'https://core.anawj.com/sync/1.5.1/src/signin/email-link.js',
+  'https://core.anawj.com/sync/1.5.1/src/signin/passcode.js',
+  'https://core.anawj.com/sync/1.5.1/src/signin/password.js',
+  'https://core.anawj.com/sync/1.5.1/src/core.js',
+  'https://core.anawj.com/sync/1.5.1/src/kinds.js',
+  'https://core.anawj.com/sync/1.5.1/src/module-sync.js',
+  'https://core.anawj.com/sync/1.5.1/src/view.js',
+  'https://core.anawj.com/sync/1.5.1/sync.js',
   // the page side of app-update (one exact version), so the app opens offline
-  'https://core.anawj.com/update/0.2.0/register.js',
+  'https://core.anawj.com/update/1.5.1/register.js',
 ];
 const MANIFEST = {};
 
-importScripts('https://core.anawj.com/update/0.2.0/sw-core.js');
+importScripts('https://core.anawj.com/update/1.5.1/sw-core.js');
 AppUpdate.init({
   app: 'prewarm', version: VERSION, shell: SHELL, manifest: MANIFEST,
   never: ['/scan-api/', /\/update\.html$/, /\/sw\.js$/],

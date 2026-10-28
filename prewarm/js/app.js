@@ -77,7 +77,7 @@ const canReload = () => reloadOk({
   pending: Object.keys(pending).length + (cloud.enabled ? cloud.pendingCount() : 0),
 });
 if ('serviceWorker' in navigator && !DEMO) {
-  setUpdates(import('https://core.anawj.com/update/0.2.0/register.js')
+  setUpdates(import('https://core.anawj.com/update/1.5.1/register.js')
     .then(async m => {
       setSw(await m.register({ app: 'prewarm', sw: 'sw.js', canReload, beforeReload: () => saveAll() }));
       addEventListener('hashchange', () => m.retryUpdate());
