@@ -49,6 +49,11 @@ are in the owner's private notes.
 - **Updates wait for a quiet moment** (app-update 0.2.0, 25 Oct 2026): the take-over reload waits while a reading is half
   entered, a sheet or question is open, someone is typing or saves are sending (`js/sync-rules.js` `reloadOk`), and is
   tried again when the tab is hidden or shown, the screen changes, or the last save has gone.
+- **Look: as before the move** (28 Oct 2026, owner: ported apps look like their originals). The kit (app-ui rc.27)
+  loads theme.css only; `applyTheme({ accent: '#002f6c', look: 'c', surface: 'grey' })` and the token bridge at the top
+  of `style.css` give the NUHS app's light values (0.0% pixel diff per screen at 390 and 1280; Settings adds the Look
+  block). The kit's bare `button`/`select`/`input`/`textarea` and `h1-h3` rules are reset to the browser's in
+  `style.css` (the Look switch keeps them); the kit's `--band` is a colour, so the brand band height is `--stripe-h`.
 - **Sync engine: app-sync 1.5.1 modules** (28 Oct 2026; was the one-object `createApp` of 0.6.3). Sign-in stays the
   app's own; app-sync's auth module only follows Firebase. Same device copy (`prewarm-store:`) and outbox
   (`prewarm-outbox`) names, so phones keep what they hold. Another account signing in on a phone wipes the last one's

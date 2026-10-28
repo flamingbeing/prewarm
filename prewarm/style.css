@@ -1,25 +1,33 @@
 /*
-  Prewarming study app on the app kit (app-ui @core/theme, loaded in index.html): the look (A, tinted glass, unless this
-  phone picks another), light / dark and density come from the kit's tokens (--bg, --surface, --text, --muted, --line,
-  --accent, --tap...); the app's own names below map onto them, so every screen follows the phone's choice. Hard-coded
-  colours are only the timing alarms and fills that must stay strong in both themes (white text on them). Open Sans
-  (index.html). Phone first (360 px). The readings screen is extra-dense (data-dense="extra" in ui-patient.js: 32 px
-  main targets, 24 px small ones, never smaller): one timepoint fits a 390 x 844 phone without scrolling.
+  Prewarming study app on the app kit (app-ui @core/theme, theme.css only, loaded in index.html), dressed as the NUHS
+  app it was (Kent Ridge Clinical "kr-app"): grey ground, white rounded cards with hairlines, navy as the only accent, a
+  white app bar with the four-quarter band (orange / red / stripe blue / navy), Open Sans (index.html), 44px tap
+  targets. The kit's tokens (--bg, --surface, --text, --muted, --line, --accent, --tap...) feed the app's own names
+  below, set so the default (look C, grey ground, navy) gives the original light values; another look, colour or dark
+  chosen in Settings follows. Hard-coded colours are only the brand band, the timing alarms and fills that must stay
+  strong in both themes. Phone first (360 px). The patient main screen is compact: everything for one timepoint fits a
+  390 x 844 phone without scrolling.
 */
 :root {
+  /* light: the original NUHS app values (grey ground, white cards, #333 ink, #ddd lines, pale navy tints), reached
+     through the kit's tokens so another look, colour or dark still follows; dark: the kit's own */
   --home-font: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --card: var(--surface); --ink: var(--text); --hair: color-mix(in srgb, var(--text) 16%, transparent);
+  --card: var(--surface); --ink: color-mix(in srgb, var(--text) 90%, var(--surface)); --hair: color-mix(in srgb, var(--text) 15%, var(--surface));
+  --line-in: color-mix(in srgb, var(--line) 42%, var(--surface));
   --navy: var(--accent); --navy-press: color-mix(in srgb, var(--accent) 82%, var(--text));
-  --soft: color-mix(in srgb, var(--accent) 14%, var(--surface)); --chip: color-mix(in srgb, var(--accent) 8%, var(--surface)); --key: var(--surface);
-  --ok-soft: color-mix(in srgb, var(--ok) 14%, var(--surface)); --ok-fill: #1a7f37;
-  --warn-soft: color-mix(in srgb, var(--warn) 16%, var(--surface));
-  --err: var(--danger); --err-soft: color-mix(in srgb, var(--danger) 12%, var(--surface)); --err-fill: #b42318;
-  --info-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --soft: light-dark(oklch(from var(--accent) .935 .02 calc(h - 7)), color-mix(in srgb, var(--accent) 14%, var(--surface)));
+  --chip: light-dark(oklch(from var(--accent) .96 .016 calc(h - 25)), color-mix(in srgb, var(--accent) 8%, var(--surface))); --key: var(--surface);
+  --ok-soft: light-dark(#e3f4e8, color-mix(in srgb, var(--ok) 14%, var(--surface))); --ok-fill: #1a7f37;
+  --warn-soft: light-dark(#fff5d6, color-mix(in srgb, var(--warn) 16%, var(--surface)));
+  --err: var(--danger); --err-soft: light-dark(#fdecea, color-mix(in srgb, var(--danger) 12%, var(--surface))); --err-fill: #b42318;
+  --info-soft: light-dark(oklch(from var(--accent) .953 .02 calc(h - 24)), color-mix(in srgb, var(--accent) 10%, var(--surface)));
   /* "due now": orange; gown and Bair Hugger times: grey until tapped, lavender once set */
   --now: light-dark(#9a3412, #ffb38a); --now-soft: light-dark(#fde3d3, #4a2a1a);
   --idle: light-dark(#50565c, #c7c7cc); --idle-soft: light-dark(#e6e6e6, #3a3a3c);
   --lav: light-dark(#4f2f86, #cdb8f5); --lav-soft: light-dark(#ebe5f7, #3a3150);
-  --r: var(--radius, 10px); --r-card: var(--card-r, 14px); --r-full: 999px;
+  /* 10 and 14 px at the kit's default corners (radius-l .75rem); a flatter or rounder theme scales them */
+  --r: calc(var(--radius-l, .75rem) * .8333); --r-card: calc(var(--radius-l, .75rem) * 1.1667); --r-full: 999px;
+  --stripe-h: 5px; /* (not --band: the kit's colour band behind a title) */
   --num: var(--font);
 }
 * { box-sizing: border-box; }
@@ -29,16 +37,23 @@ html { -webkit-text-size-adjust: 100%; }
 body { zoom: var(--ui-zoom, 1); }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--font); -webkit-tap-highlight-color: transparent;
   padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+/* the kit's rules for bare controls and headings (theme.css) are for its own parts; this app draws its own, so they
+   start from the browser's defaults as before the move (the Look switch in Settings keeps the kit's) */
+button:where(:not(.theme-switch *)), input:where(:not(.theme-switch *)), select:where(:not(.theme-switch *)),
+  textarea:where(:not(.theme-switch *)) { all: revert; box-sizing: border-box; }
+button:not(:disabled):active { box-shadow: none; }
+h1, h2, h3 { line-height: inherit; }
 button, input, select, textarea { font: inherit; color: inherit; }
 
-/* app bar: the surface with a hairline (Solid), or a floating glass capsule (glass.css, look A) */
+/* app bar: the card colour with a hairline and the four-quarter NUHS band along its top (orange / red / stripe blue /
+   the app colour) */
 .bar { position: sticky; top: 0; z-index: 5; color: var(--navy); border-bottom: 1px solid var(--hair);
-  padding-top: env(safe-area-inset-top, 0px); background: var(--card); }
-.glass .bar { max-width: 600px; margin: var(--gap) auto 0; padding: 0; }
+  padding-top: max(var(--stripe-h), calc(env(safe-area-inset-top, 0px) + var(--stripe-h)));
+  background: linear-gradient(90deg, #e57200 0 25%, #e4002b 25% 50%, #178fd7 50% 75%, var(--navy) 75% 100%) top / 100% var(--stripe-h) no-repeat, var(--card); }
 .bar .row { display: flex; align-items: center; gap: 2px; min-height: 50px; padding: 0 4px 0 12px; max-width: 600px; margin: 0 auto; }
 .bar #back:not([hidden]) + h1 { margin-left: -4px; }
 .bar .row:has(#back:not([hidden])) { padding-left: 2px; }
-.bar h1 { flex: 0 1 auto; margin: 0; font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar h1 { flex: 0 1 auto; font-family: inherit; margin: 0; font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* running timer and next event (patient screen) */
 #extra { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .clock { display: flex; align-items: center; gap: 8px; flex: 1 0 auto; margin-left: 8px; color: var(--navy); }
@@ -151,7 +166,7 @@ details.sect > .stack { margin-top: 4px; }
 span.pn { color: var(--hair); }
 /* timepoint strip */
 .strip { position: relative; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
-.strip a { flex: none; min-width: 42px; min-height: var(--tap); display: flex; align-items: center; justify-content: center; border-radius: var(--r); border: 1px solid var(--hair); background: var(--card); text-decoration: none; color: var(--muted); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
+.strip a { flex: none; min-width: 42px; min-height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--r); border: 1px solid var(--hair); background: var(--card); text-decoration: none; color: var(--muted); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; }
 .strip a.done { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
 .strip a.missed { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .strip a.on { background: var(--navy); color: var(--on-accent); border-color: var(--navy); }
@@ -185,7 +200,7 @@ span.pn { color: var(--hair); }
 .num .muted { font-size: 1rem; font-weight: 400; }
 .pm .num { white-space: nowrap; overflow: hidden; }
 input.num { border: 2px solid var(--navy); border-radius: var(--r); background: var(--card); }
-.card.typed input.num { border: 1px solid var(--line); }
+.card.typed input.num { border: 1px solid var(--line-in); }
 .card.typed input.num:focus { border: 2px solid var(--navy); }
 .k, .chip { min-height: var(--tap); border-radius: var(--r); border: 1px solid var(--hair); background: var(--key); color: var(--navy); font-size: 1.4rem; font-weight: 600; cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
 .k:active, .chip:active { background: var(--soft); }
@@ -253,7 +268,7 @@ body.ro main .k, body.ro main .num, body.ro main .chip, body.ro main .tchip, bod
 .list a.declined b { color: var(--muted); text-decoration: line-through; }
 .list a.draft { border-left: 6px dashed var(--hair); }
 .list .declline { color: var(--muted); font-style: italic; }
-.fld textarea { width: 100%; box-sizing: border-box; min-height: 84px; font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); resize: vertical; }
+.fld textarea { width: 100%; box-sizing: border-box; min-height: 84px; font: inherit; padding: 8px; border: 1px solid var(--line-in); border-radius: var(--r); resize: vertical; }
 .listhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .listhead .link { font-size: 14px; }
 .seltools { position: sticky; top: calc(56px + env(safe-area-inset-top, 0px)); z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; background: var(--card); border: 1px solid var(--navy); border-radius: var(--r-card); }
@@ -286,7 +301,7 @@ html, body { overscroll-behavior-y: none; }
 .ptabs:not([hidden]) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 600px; margin: 0 auto; padding: 0 12px 5px; }
 /* on the patient screens the tab bar sits under the key times (owner, 12 Oct 2026) */
 main .ptabs:not([hidden]) { width: 100%; max-width: none; padding: 0; margin: 2px 0 0; }
-main .ptabs a { min-height: var(--tap); font-size: 14px; padding: 0 4px; text-align: center; line-height: 1.15; }
+main .ptabs a { min-height: 34px; font-size: 14px; padding: 0 4px; text-align: center; line-height: 1.15; }
 .note.nopw { margin-top: 4px; background: var(--card); border: 1px solid var(--hair); color: var(--ink); }
 .ptabs a { display: grid; place-items: center; min-height: 32px; border-radius: var(--r); border: 1px solid var(--hair); color: var(--navy); font-size: 14px; font-weight: 600; text-decoration: none; background: var(--card); }
 .ptabs a[aria-selected="true"] { background: var(--navy); border-color: var(--navy); color: var(--on-accent); }
@@ -410,7 +425,7 @@ dialog.kp::backdrop { background: rgba(0, 0, 0, .4); }
 .kpin.bad { border-color: var(--err); background: var(--err-soft); }
 .kpnow { display: flex; justify-content: center; gap: 10px; width: 100%; min-height: 52px; margin-bottom: 8px; border: 1px solid var(--navy); border-radius: var(--r); background: var(--soft); color: var(--navy); font-size: 18px; font-weight: 600; align-items: center; cursor: pointer; }
 .kpgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
-.kpgrid button { min-height: 58px; font-size: 26px; font-weight: 600; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); color: var(--ink); cursor: pointer; touch-action: manipulation; }
+.kpgrid button { min-height: 58px; font-size: 26px; font-weight: 600; border: 1px solid var(--line-in); border-radius: var(--r); background: var(--card); color: var(--ink); cursor: pointer; touch-action: manipulation; }
 .kpgrid button:active { background: var(--soft); }
 .kpbtns { display: flex; gap: 6px; }
 .kpbtns button { flex: 1; min-height: 50px; font-size: 16px; }
@@ -421,18 +436,18 @@ dialog.kp::backdrop { background: rgba(0, 0, 0, .4); }
 .progress { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 2px 0; }
 .progress > span { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
 .progress > span.on { color: var(--ok); font-weight: 600; }
-.progress .tick { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; border: 1.5px solid var(--line); border-radius: 4px; font-size: 10px; line-height: 1; }
+.progress .tick { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; border: 1.5px solid var(--line-in); border-radius: 4px; font-size: 10px; line-height: 1; }
 .progress > span.on .tick { background: var(--ok-fill); border-color: var(--ok-fill); color: #fff; }
 
 /* PACU nurse link (owner, 13 Oct 2026) */
 .paculink { display: grid; gap: 6px; margin-top: 12px; padding: 10px; border: 1px solid var(--hair); border-radius: var(--r-card); background: var(--card); }
 .paculink h2 { margin: 0; font-size: 16px; }
-.pacuurl { width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); color: var(--ink); }
+.pacuurl { width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px; border: 1px solid var(--line-in); border-radius: var(--r); background: var(--bg); color: var(--ink); }
 .pacutimes .tchip { min-height: 64px; font-size: 16px; }
 
 /* values only carried over, not yet saved for this timepoint: light grey (owner, 13 Oct 2026) */
 .card.dflt .num { color: var(--muted); font-weight: 400; }
-.card.dflt .chip[aria-pressed="true"] { background: var(--hair); border-color: var(--line); color: var(--ink); }
+.card.dflt .chip[aria-pressed="true"] { background: var(--hair); border-color: var(--line-in); color: var(--ink); }
 .refreshbox { display: grid; gap: 4px; margin-top: 12px; }
 
 .bar h1 { display: flex; flex-direction: column; line-height: 1.1; }
@@ -480,7 +495,7 @@ dialog.kp::backdrop { background: rgba(0, 0, 0, .4); }
 
 /* POD1 / POD2 due on the patient list */
 .podline { display: block; color: var(--warn); font-weight: 600; font-size: 13px; }
-.search { width: 100%; box-sizing: border-box; margin: 4px 0 8px; min-height: var(--tap); padding: 6px 12px; font: inherit; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); color: var(--ink); }
+.search { width: 100%; box-sizing: border-box; margin: 4px 0 8px; min-height: var(--tap); padding: 6px 12px; font: inherit; border: 1px solid var(--line-in); border-radius: var(--r); background: var(--card); color: var(--ink); }
 .unsent { display: block; color: var(--err); font-weight: 600; font-size: 13px; }
 .ready { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .ready li { display: flex; gap: 10px; align-items: baseline; }
