@@ -4,7 +4,7 @@ import { val, lastEdit, isGone, markDeleted, restore } from './store.js';
 import * as cloud from './cloud.js';
 import * as scan from './scan.js';
 import * as scanImports from './scan-imports.js';
-import { $, SIZES, applySize, cleanup, esc, go, header, paint, patients, render, route, saveAll, saveSettings, settings, shared, showBanner, sid, sidL, toast, view } from './ui-core.js';
+import { $, SIZES, theme, applySize, cleanup, esc, go, header, paint, patients, render, route, saveAll, saveSettings, settings, shared, showBanner, sid, sidL, toast, view } from './ui-core.js';
 import { failed, finishAdmin, lastSync, logOut, pending, refreshHtml, set, sharing, swReg, sync, syncText, uploadLocal, watch, wireRefresh } from './ui-sync.js';
 import { LOCK_ICON, status } from './ui-home.js';
 import { beep } from './ui-alerts.js';
@@ -81,12 +81,15 @@ route(/^\/settings$/, () => {
     <button class="secondary" id="test">Test the alert</button>`)}
     ${group('Data', `<a class="secondary" href="#/export">Export Excel</a>
     <a class="secondary" href="#/delete">Delete participants</a>`)}
-    ${group('Screen size', `<div class="seg sizes" role="group" aria-label="Screen size">${SIZES.map(([k, l]) => `<button type="button" class="chip" data-zoom="${k}" aria-pressed="${String(settings.zoom || '1') === k}">${l}</button>`).join('')}</div>
-    <small class="muted">Makes text and buttons bigger or smaller on this phone.</small>`)}
+    ${group('This phone', `<h3>Screen size</h3><div class="seg sizes" role="group" aria-label="Screen size">${SIZES.map(([k, l]) => `<button type="button" class="chip" data-zoom="${k}" aria-pressed="${String(settings.zoom || '1') === k}">${l}</button>`).join('')}</div>
+    <small class="muted">Makes text and buttons bigger or smaller on this phone.</small>
+    <h3>Look</h3><div id="themebox"></div>`)}
     ${group('Scan pages (beta)', `<label class="tog"><input type="checkbox" id="scanon" ${settings.scan ? 'checked' : ''}><span>Show Scan pages<small>Photograph the paper form’s pages. Pages stay on this phone for now.</small></span></label>
     ${settings.scan ? '<a class="secondary" href="#/scan">Scan pages</a>' : ''}
     ${settings.scan && shared.admin ? '<a class="secondary" href="#/scanimports">Scan imports (approve)</a>' : ''}`)}</div>`);
   wireRefresh();
+  // the kit's look, light / dark, density and Bars and sheets (kept on this phone)
+  theme.then(t => { const box = $('#themebox'); if (t && box && !box.childElementCount) t.themeSwitch(box); });
   $('#scanon').onchange = e => { settings.scan = e.target.checked; saveSettings(); render(); };
   view.querySelectorAll('[data-zoom]').forEach(b => b.onclick = () => {
     settings.zoom = b.dataset.zoom; saveSettings(); applySize(settings.zoom);

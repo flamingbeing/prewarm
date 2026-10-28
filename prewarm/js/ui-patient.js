@@ -433,9 +433,10 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
       <p class="resetline"><button class="link" id="clearall">Clear ${isSaved ? 'this saved reading' : 'all boxes'}</button></p>`}
       ${cols.some(c => c.key === 'ts') ? tsScale(draft.ts) : ''}</div>`;
     // three parts (owner, 12 Oct 2026): key times; the tab bar and its readings (swipe changes tab here only);
-    // the other forms, Still to fill and Mark complete, the same on both tabs
-    paint(`<section class="third top" aria-label="Key times">${val(p, 'done') ? `<p class="ok-box donetop">✓ Data collection complete <small>${esc(val(p, 'done'))}</small></p>` : ''}${timesHtml()}</section>
-      <section class="third mid">${ptabsHtml()}${s === 'prewarm' ? inductionAsks(p) : ''}${reading}
+    // the other forms, Still to fill and Mark complete, the same on both tabs. Key times and readings are the kit's
+    // extra-dense level (32 px main targets, 24 px small ones; 44 / 36 px on a phone set to Comfortable)
+    paint(`<section class="third top" data-dense="extra" aria-label="Key times">${val(p, 'done') ? `<p class="ok-box donetop">✓ Data collection complete <small>${esc(val(p, 'done'))}</small></p>` : ''}${timesHtml()}</section>
+      <section class="third mid" data-dense="extra">${ptabsHtml()}${s === 'prewarm' ? inductionAsks(p) : ''}${reading}
       ${s === 'haemo' && vitalsCollected(p) ? '<p class="okline small">✓ Vital signs data collected: ticked on the paper form</p>' : ''}
       ${s === 'haemo' && settings.hide.haemo15 ? `<p class="muted small">Only baseline is entered here; the 15-min rows come from the monitor download. Turn them on in Settings.</p>` : ''}
       ${main && noPw ? '' : signoffHtml(p, s)}</section>
