@@ -49,6 +49,12 @@ are in the owner's private notes.
 - **Updates wait for a quiet moment** (app-update 0.2.0, 25 Oct 2026): the take-over reload waits while a reading is half
   entered, a sheet or question is open, someone is typing or saves are sending (`js/sync-rules.js` `reloadOk`), and is
   tried again when the tab is hidden or shown, the screen changes, or the last save has gone.
+- **Sync engine: app-sync 1.5.1 modules** (28 Oct 2026; was the one-object `createApp` of 0.6.3). Sign-in stays the
+  app's own; app-sync's auth module only follows Firebase. Same device copy (`prewarm-store:`) and outbox
+  (`prewarm-outbox`) names, so phones keep what they hold. Another account signing in on a phone wipes the last one's
+  copy (a new Firestore copy, no reload) and is refused while that one has saves not sent, so an admin's sign-in on a
+  member's phone with unsent readings stops first with a message (`cloud.js` `adminFromMember`). Log out is
+  `auth.forget({ force })` after the screen's warnings. Pins: `cloud.js` `CORE`/`UPDATE`, `app.js`, `sw.js` (all 1.5.1).
 ### The app version starts with the date
 Settings (under Refresh now) shows "App version 2026-10-14 (3f9a2c1d)": the day (Singapore time) of the app folder's last
 commit, then the hash. `tools/stamp-versions.mjs` (app-update's, since 25 Oct 2026) builds it at deploy

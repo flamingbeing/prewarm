@@ -17,8 +17,9 @@ import { mergeShared } from './store.js';
 import { lockLeave, statusInput } from './sync-rules.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
-// the sync engine (patients): an exact version, precached by sw.js
-const SYNC = 'https://core.anawj.com/sync/0.6.3/index.js';
+// the sync engine (patients): app-sync's modules at an exact version, precached by sw.js
+const CORE = 'https://core.anawj.com/sync/1.5.1/';
+export const UPDATE = 'https://core.anawj.com/update/1.5.1/register.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -28,38 +29,48 @@ let fb = null, starting = null;
 // one start even when several calls arrive together (a second initializeApp would throw)
 function sdk() { return fb ? Promise.resolve(fb) : (starting ||= start()); }
 async function start() {
-  const [app, auth, fs, sync] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js'), import(SYNC)]);
+  const [app, auth, fs, ...mods] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-auth.js'), import(SDK + 'firebase-firestore.js'),
+    ...['index.js', 'app.js', 'auth.js', 'sync.js'].map(f => import(CORE + f))]);
   const a = app.initializeApp(EMU ? { ...FIREBASE_CONFIG, projectId: 'demo-prewarm' } : FIREBASE_CONFIG);
-  let db;
-  // keep a copy on the phone so saving works without signal and syncs later
-  try { db = fs.initializeFirestore(a, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); }
-  catch { db = fs.getFirestore(a); }
-  const base = { auth: auth.getAuth(a), db, A: auth, F: fs, emulator: EMU };
-  if (EMU) { fs.connectFirestoreEmulator(db, '127.0.0.1', 8085); auth.connectAuthEmulator(base.auth, 'http://127.0.0.1:9099', { disableWarnings: true }); }
-  engine = makeEngine(base, sync);
-  fb = { ...base, S: sync };
+  // keep a copy on the phone so saving works without signal and syncs later; memory: a copy for this page only (asked
+  // by app-sync after another account's sign-in wiped the last one's, when a persistent one can't be had)
+  const openDb = memory => {
+    try { return fs.initializeFirestore(a, { localCache: memory ? fs.memoryLocalCache() : fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) }); }
+    catch { return fs.getFirestore(a); }
+  };
+  // one object every module shares: app-sync puts a reopened db on it, so every call below reads db from sdk() afresh
+  const base = { auth: auth.getAuth(a), db: openDb(false), A: auth, F: fs, emulator: EMU };
+  if (EMU) { fs.connectFirestoreEmulator(base.db, '127.0.0.1', 8085); auth.connectAuthEmulator(base.auth, 'http://127.0.0.1:9099', { disableWarnings: true }); }
+  const [S, { createApp }, { auth: authModule }, { sync }] = mods;
+  engine = await makeEngine(base, S, createApp, authModule, sync, openDb);
+  fb = Object.assign(base, { S });
   return fb;
 }
 
-// ---- the sync engine (app-sync createApp since 0.6.0, 25 Oct 2026; pinned to 0.6.3): patients only. Every save goes to an outbox on
+// ---- the sync engine (app-sync createApp since 0.6.0, 25 Oct 2026; its modules since 1.5.1, 28 Oct 2026): patients only. Every save goes to an outbox on
 // this phone first, then to the server one at a time, merged there field by field (store.js mergeShared), so a save
 // never waits in Firestore's own queue and is never lost with its cache. Opens listen only for patients changed since
 // the last sync, with a copy of the list on the phone. Members, codes, admins, forms, payments, PACU links and shares
 // stay direct writes. Writes carry serverAt (the server's clock); the stamp only moves forward, an admin's lock writes
 // its leave entry in the same transaction (sync-rules.js lockLeave), and a patient that leaves the list while it still
-// has saves not sent stays on this phone and is reported (prewarm-sync-left). The queue's owner (createApp's scope) is
+// has saves not sent stays on this phone and is reported (prewarm-sync-left). The queue's owner (sync's scope) is
 // this phone's uid; the list's scope is the hospital ('' for an admin: every patient).
+// Sign-in stays the app's own (join code: anonymous; admins: emailed link or password, below); app-sync's auth module
+// only follows Firebase's answers: another account signing in on this phone wipes the last one's copy and outbox (and
+// is refused while that one has saves not sent: the admin sign-ins below check first), sign-out keeps them.
 let engine = null;
-function makeEngine(base, S) {
+// the app's own copies, deleted after app-sync's wipe at log out (logOut's extra)
+let forgetExtra = null;
+async function makeEngine(base, S, createApp, authModule, sync, openDb) {
   // nothing-lost report (app-sync report.js): counts only (saves waiting over an hour, refused, in conflict, sync
   // errors by code) and versions, at most once an hour and when the page is hidden; never a patient or an id
   let appVersion = 'unknown';
-  import('https://core.anawj.com/update/0.2.0/register.js').then(m => m.version()).then(v => { if (v) appVersion = v; }).catch(() => {});
+  import(UPDATE).then(m => m.version()).then(v => { if (v) appVersion = v; }).catch(() => {});
   const report = S.createReport({ app: 'prewarm', version: () => appVersion, storage: (() => { try { return localStorage; } catch { return null; } })() });
   report.start();
-  const app = S.createApp({
-    name: 'prewarm', colls: ['patients'], kinds: { patient: 'patients' }, path: (_site, coll) => [coll],
-    sdk: async () => base, scope: user => user.uid, report, watchEvery: 30000,
+  const app = createApp({ config: { name: 'prewarm', sdk: async () => base }, modules: [authModule(), sync({
+    colls: ['patients'], kinds: { patient: 'patients' }, path: (_site, coll) => [coll],
+    scope: user => user.uid, report, watchEvery: 30000,
     backend: {
       stampMode: 'server',
       // members: their hospital's unlocked patients and its leave entries (the rules refuse anything else); admins
@@ -81,12 +92,17 @@ function makeEngine(base, S) {
       onLeave: (_scope, coll, id) => { if (coll === 'patients') dispatchEvent(new CustomEvent('prewarm-sync-left', { detail: { id } })); },
       onError: e => { report.error(e?.code); dispatchEvent(new CustomEvent('prewarm-sync-error', { detail: e })); },
     },
-  });
-  addEventListener('pageshow', () => app.nudge('event'));
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { app.queue.kick(); app.nudge('event'); } });
+    forget: { extra: () => forgetExtra?.() },
+    // after a wipe: a new Firestore copy in place of the cleared one, so an admin's sign-in needs no reload
+    reopen: async ({ memory }) => openDb(memory),
+  })] });
+  await app.ready;
+  const s = app.sync;
+  addEventListener('pageshow', () => s.nudge('event'));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { s.queue.kick(); s.nudge('event'); } });
   let last = null;
-  app.status$(st => { last = st; });
-  return { app, S, status: () => last };
+  s.status$(st => { last = st; });
+  return { app: s, auth: app.auth, S, status: () => last };
 }
 // the write queue's saves for this phone's account (activated once signed in), or null before the engine started
 export async function queue() {
@@ -105,6 +121,9 @@ export function status({ confirmed = true } = {}) {
 // saves in this phone's outbox still being sent (0 before the engine started): an update's reload waits for them. Not
 // queue.pending(), which also counts refused saves and conflicts: those wait for a person, and would hold an update for good
 export const pendingCount = () => engine ? engine.app.queue.entries().filter(x => x.state === 'pending').length : 0;
+// any save of this phone's account not on the server yet (sending, refused or in conflict): another account's sign-in
+// would be refused (app-sync wipes nothing while there are any)
+const unsentAny = () => !!engine && engine.app.queue.entries().some(x => !['synced', 'archived'].includes(x.state) || x.refused);
 // "Refresh now": a moment the phone came back, for the watchdog (listen again if the server went quiet)
 export function nudge() { if (engine) { engine.app.queue.kick(); engine.app.nudge('event'); } }
 
@@ -115,6 +134,7 @@ const friendly = (e, ctx) => {
   if (ctx === 'pacu' && (e?.code === 'permission-denied' || e?.code === 'not-found')) return 'This link has stopped working. Ask the study team for a new link.';
   if (ctx === 'pay' && e?.code === 'permission-denied') return 'Not allowed: only this hospital’s team can save these, and only study admins can tick or delete them.';
   if (ctx === 'save' && e?.code === 'permission-denied') return 'Not saved to the team: this patient may be locked, or this phone is no longer on the team. Ask a study admin.';
+  if (e?.code === 'prewarm/unsent') return 'This phone has readings not sent to the team yet. Get signal and wait for them to send (or log out first), then sign in.';
   if (e?.code === 'permission-denied') return 'Not allowed. Check the hospital and code.';
   if (e?.code === 'unavailable') return 'No connection. Try again with signal.';
   if (e?.code === 'auth/invalid-action-code' || e?.code === 'auth/expired-action-code') return 'That sign-in link has expired or was used already. Send a new one.';
@@ -186,18 +206,21 @@ export async function flushed(ms = 5000) {
   const fsDone = Promise.race([F.waitForPendingWrites(db).then(() => true), new Promise(ok => setTimeout(() => ok(false), ms))]);
   return (await q.flush(ms)) && await fsDone;
 }
-// Log out: leave the team (or sign out an admin) and delete the study data on this phone (app-sync forgetDevice): stop
+// Log out: leave the team (or sign out an admin) and delete the study data on this phone (app-sync auth.forget): stop
 // listening, sign out, then the engine's copy of the list, the outbox's saves for this account (the screen warned about
-// unsent ones), Firestore's own copy, and the app's (extra). The page reloads afterwards (Firestore can't be used again
-// once its copy is cleared). A step that fails doesn't stop the others.
+// unsent ones: force), Firestore's own copy, and the app's (extra). The page reloads afterwards (ui-sync.js). A step
+// that fails doesn't stop the others.
 export async function logOut({ extra = null } = {}) {
   await sdk();
-  // createApp's signOut refuses while saves are unsent; here the screen has warned already, so forgetDevice runs on
-  // createApp's parts. Signing out comes before the wipe (it needs Firestore, which the wipe ends); it goes ahead even
+  // leaving comes before the sign-out and the wipe (it needs Firestore, which the wipe ends); the wipe goes ahead even
   // if leaving fails
-  const { app, S } = engine, { hub, queue: q, stores, adapter } = app.parts;
-  const proceed = async () => { try { await leave(); } catch { /* signed out anyway, or removed already */ } return true; };
-  return S.forgetDevice({ hub, stores, queue: q, proceed, keep: [], clearBackendCache: adapter.clearCache, extra });
+  forgetExtra = extra;
+  try { return await engine.auth.forget({ force: true, before: async () => { try { await leave(); } catch { /* signed out anyway, or removed already */ } } }); }
+  finally { forgetExtra = null; }
+}
+// a member's phone with saves not sent can't take an admin's sign-in: they would be lost with the member's copy
+function adminFromMember(auth) {
+  if (auth.currentUser?.isAnonymous && unsentAny()) throw Object.assign(new Error('unsent'), { code: 'prewarm/unsent' });
 }
 
 // Admins sign in with an emailed link (no Google pop-up: phone browsers block the pop-up's helper page on
@@ -213,6 +236,7 @@ export function isAdminLink() { return /[?&]oobCode=/.test(location.href) && /[?
 export function savedAdminEmail() { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch { return ''; } }
 export async function finishAdminLink(email) {
   const { auth, A } = await sdk();
+  adminFromMember(auth);
   if (auth.currentUser?.isAnonymous) { try { await leave(); } catch { /* signed out anyway */ } }
   await A.signInWithEmailLink(auth, email, location.href);
   try { localStorage.removeItem(EMAIL_KEY); } catch { /* fine */ }
@@ -225,6 +249,7 @@ export async function finishAdminLink(email) {
 // the email, which the rules need); it is set or changed from Settings while signed in, or by an emailed reset link.
 export async function adminPasswordSignIn(email, password) {
   const { auth, A } = await sdk();
+  adminFromMember(auth);
   if (auth.currentUser?.isAnonymous) { try { await leave(); } catch { /* signed out anyway */ } }
   await A.signInWithEmailAndPassword(auth, email, password);
 }

@@ -291,8 +291,30 @@ try {
     assert.ok(r.ok, 'the payment entry reached the server');
     await D.ctx.close();
   });
+
+  // app-sync 1.5.1 (28 Oct 2026): another account's sign-in wipes the last one's copy and is refused while it has
+  // saves not sent; an admin signing in on a member's phone is stopped first, before the member leaves the team
+  await doneIn('an admin sign-in on a member phone with unsent readings is stopped, nothing is lost', async () => {
+    const F = await phone('FF'), f = F.page;
+    await F.ctx.setOffline(true); await f.waitForTimeout(500);
+    await f.goto(BASE + '#/new');
+    await f.fill('#sid', 'GAP-ADM'); await f.click('.seg .chip[data-v="1"]'); await f.click('button[type=submit]');
+    await f.waitForSelector('.times');
+    const id = await pid(f);
+    // a member's Settings shows no admin sign-in; the emailed link (finishAdminLink) runs the same check
+    const got = await f.evaluate(async () => {
+      const cloud = await import('./js/cloud.js');
+      try { await cloud.adminPasswordSignIn('lead@example.com', 'correct horse 42'); return 'signed in'; }
+      catch (e) { return e.code + ' | ' + cloud.friendly(e); }
+    });
+    assert.match(got, /^prewarm\/unsent \| .*not sent to the team yet/, got);
+    assert.equal(await f.evaluate(async () => !!(await (await import('./js/cloud.js')).member())), true, 'still on the team');
+    await F.ctx.setOffline(false);
+    await serverWait(id, d => d.site === 'NUH', 'the unsent patient reached the server');
+    await F.ctx.close();
+  });
 } finally {
   await b.close();
 }
 if (errors.length) { console.error('prewarm sync gaps: FAIL\n- ' + errors.join('\n- ')); process.exit(1); }
-console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, older local value loses, locked with unsent changes, locked while a phone was closed (also with unsent changes), OK on a changed reading keeps the other phone\u2019s boxes, log out with an unsent email and PayNow)');
+console.log('prewarm sync gaps: ok (typed BMI not recalculated, changed boxes only, wrong code message, restore, first server word, older local value loses, locked with unsent changes, locked while a phone was closed (also with unsent changes), OK on a changed reading keeps the other phone\u2019s boxes, log out with an unsent email and PayNow, admin sign-in held while a member phone has unsent readings)');
