@@ -15,7 +15,7 @@ repo; never copy anything from there into this repo, a PR or an issue (neutral p
 
 ## Rules that bite
 
-- **Vital app (live study data):** full tests before merging (below), and nothing merged while the owner says a case
+- **Vital app (live study data):** green PR Checks before merging (below), and nothing merged while the owner says a case
   is being collected. Fake data only in tests and screenshots.
 - The service worker's `VERSION` stays plain (`prewarm-vN`); the Workers Builds build command stamps it per deploy
   (`node tools/stamp-versions.mjs prewarm`, app-update's tool). Don't commit a stamped one.
@@ -33,10 +33,9 @@ repo; never copy anything from there into this repo, a PR or an issue (neutral p
 ```
 node .devkit/tools/check.mjs        # repo checks + Worker tests (CI runs this and the unit tests)
 node .devkit/tools/proofread.mjs    # page and doc mistakes
-tools/test-prewarm.sh       # unit tests + the eight browser tests (~2 min; needs PLAYWRIGHT_PATH, CHROMIUM_PATH)
-tools/test-rules.sh         # Firestore rules in the emulator (needs Java)
-tools/test-prewarm-sync.sh  # two phones through the emulators (needs Java; tools from test-rules.sh)
 ```
+
+Locally only those (plus the one browser test being fixed, `tools/test-prewarm.sh`'s script by name; `tools/test-rules.sh` when rules change). PR Checks on GitHub run the quick set (the eight browser tests side by side in Chromium at phone size, rules, unit tests, proof-read) and gate merge and deploy; there is no WebKit, Firefox or jank gate here, so no separate full-checks workflow. Run the rest there, not locally first.
 
 `.devkit/` (git-ignored) holds the kit's tools; CI copies it with `app-devkit/setup-tools@v1.6.0`. Locally:
 `git clone --depth 1 --branch v1.6.0 https://github.com/flamingbeing/app-devkit /tmp/devkit && mkdir -p .devkit && cp -R /tmp/devkit/{tools,playwright,rules,worker} .devkit/`.

@@ -48,8 +48,9 @@ try {
   // Accept and next opens the live camera again for page 2; a blurry photo asks "Retake?"
   await pg.waitForSelector('#sclive:not([hidden])');
   ok(/Page 2/.test(await pg.textContent('#sclivetitle')), 'live view moves on to page 2');
-  await pg.waitForTimeout(500); // the save runs beside the camera
-  const p1 = (await pages()).find(p => p.label === '1');
+  // the save runs beside the camera: wait for page 1 to be stored (a slow runner takes longer than a fixed pause)
+  let p1;
+  for (let i = 0; i < 100 && !p1?.still; i++) { await pg.waitForTimeout(100); p1 = (await pages()).find(p => p.label === '1'); }
   ok(p1 && p1.still?.w === 1600 && p1.still?.h === 1200 && p1.still?.how === 'frame', 'page 1 kept the photo size: ' + JSON.stringify(p1?.still));
   await cam('blur', true);
   await pg.waitForSelector('#scedit:not([hidden]) #scbar0:not([hidden])', { timeout: 8000 });
