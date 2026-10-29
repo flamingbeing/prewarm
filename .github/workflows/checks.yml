@@ -1,5 +1,5 @@
 # The repo check (service workers, wrangler settings, Worker tests), the prewarm unit tests and the Firestore rules in
-# the emulator, on every PR and on main. The browser tests stay with the session that changes the app (AGENTS.md).
+# the emulator, and the browser tests (Chromium, phone size, side by side), on every PR and on main. Nothing slower exists.
 name: Checks
 
 on:
@@ -35,3 +35,30 @@ jobs:
           key: rules-${{ runner.os }}-${{ hashFiles('tools/test-rules.sh') }}
       - name: Firestore rules (local emulator, demo project)
         run: bash tools/test-rules.sh
+
+  browser:
+    runs-on: ubuntu-24.04   # Playwright 1.56.1 has no browser deps for ubuntu-latest (26.04)
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flamingbeing/app-devkit/setup-node@v1.1.0
+      - name: Install Playwright
+        run: npm install -g playwright@1.56.1
+      - uses: flamingbeing/app-devkit/setup-browser@v1.1.0
+        with:
+          playwright-version: '1.56.1'
+          devkit-dir: ''
+      - name: Browser tests (side by side)
+        run: |
+          export PLAYWRIGHT_PATH="$(npm root -g)/playwright/index.mjs"
+          (python3 -m http.server 8080 >/dev/null 2>&1 &)
+          sleep 1
+          pids=()
+          for t in e2e edge.e2e back.e2e gaps.e2e fullcase.e2e scan.e2e scan-live.e2e scan-burst.e2e; do
+            timeout -s KILL 600 node "prewarm/test/$t.mjs" >"$t.txt" 2>&1 & pids+=("$!:$t")
+          done
+          fail=0
+          for pt in "${pids[@]}"; do
+            if wait "${pt%%:*}"; then echo "ok ${pt#*:}"; else echo "FAIL ${pt#*:}"; grep -v '^\s*at ' "${pt#*:}.txt" | tail -12 | cut -c1-300; fail=1; fi
+          done
+          exit $fail
