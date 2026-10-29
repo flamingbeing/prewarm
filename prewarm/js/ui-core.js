@@ -12,7 +12,7 @@ export const $ = s => document.querySelector(s);
 // the app kit's theme (app-ui @core/theme, one exact version; sw.js keeps it offline): look C (plain bar, hairlines) on
 // the light grey ground, the study's navy as the accent, so it looks as before the move unless this phone picks another
 // in Settings. import() so a blocked core.anawj.com leaves the kit's plain CSS look
-export const KIT = 'https://core.anawj.com/ui/1.0.0-rc.27/';
+export const KIT = 'https://core.anawj.com/ui/1.0.0-rc.42/';
 export const theme = import(KIT + 'theme/index.js').then(t => { t.applyTheme({ accent: '#002f6c', look: 'c', surface: 'grey' }); return t; }).catch(() => null);
 export const view = $('#view');
 export const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -188,6 +188,28 @@ export function askTime(q, def) {
 }
 // run fn now, or after the save prompt when a reading on screen has unsaved changes
 export function afterAsking(fn) { const g = leaveGuard?.(); if (g) askLeave(g, () => { leaveGuard = null; fn(); }); else fn(); }
+// Back with tabs (owner, 29 Oct 2026, as Android apps do it): moving between a patient's reading tabs and their
+// timepoints adds at most one Back step. Back on another tab goes to the tab the patient opened on, Back there goes
+// back where the patient was opened from. app-ui's tabBack keeps that one entry; each entry keeps its own place (state.i)
+// for the leave check. Without the kit a move is a plain step, as before.
+let tabs = null;
+import(KIT + 'ui/tab-back.js').then(m => { tabs = m.tabBack({ history, events: window, onFirst() {} }); }).catch(() => {});
+export function goTab(hash, first) {
+  if (!tabs) return go(hash);
+  afterAsking(() => {
+    if (location.hash === hash) return render();
+    if (first && tabs.away()) {
+      // back to the first tab's own entry, which then shows the timepoint asked for (render follows on hashchange)
+      const land = () => { window.removeEventListener('popstate', land); if (location.hash !== hash) history.replaceState(history.state, '', hash); };
+      window.addEventListener('popstate', land);
+      return tabs.went(true);
+    }
+    const push = !first && !tabs.away();
+    tabs.went(first, hash);
+    if (push) history.replaceState({ ...history.state, i: at + 1 }, '');
+    render();
+  });
+}
 function askLeave(g, proceed) {
   const d = document.createElement('dialog');
   d.className = 'ask';

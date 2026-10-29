@@ -2,7 +2,7 @@
 import { SERIES, BY_ID, calc, normaliseTemp, isShown, WARM_MIN } from './schema.js';
 import { setVal, val, isGone } from './store.js';
 import { openKeypad } from './keypad.js';
-import { $, GROUPS, NS, askTime, cleanup, esc, field, fitNums, fromMin, go, header, hooks, lockTaps, nowHM, paint, patients, read, render, route, saveAll, setLeaveGuard, settings, sid, sidL, toMin, toast, view, write } from './ui-core.js';
+import { $, GROUPS, NS, askTime, cleanup, esc, field, fitNums, fromMin, go, goTab, header, hooks, lockTaps, nowHM, paint, patients, read, render, route, saveAll, setLeaveGuard, settings, sid, sidL, toMin, toast, view, write } from './ui-core.js';
 import * as cloud from './cloud.js';
 import { failed, heardYet, pending, refreshNow, set, sharing, sync, syncText } from './ui-sync.js';
 import { chipState } from './sync-rules.js';
@@ -171,6 +171,9 @@ const TS_SCALE = [[3, 'hot', 'intolerably warm'], [2, 'warm', 'too warm'], [1, '
   [0, 'neutral', 'comfortable'], [-1, 'slightly cool', 'tolerably uncomfortable, cool'], [-2, 'cool', 'too cool'], [-3, 'cold', 'intolerably cool']];
 // every group opens on the Induction room tab until the patient is in OT (owner, 21 Oct 2026: consent is asked there)
 export const defaultSeries = p => val(p, 'ev_ot') || val(p, 'io_knife') ? 'iotemp' : 'prewarm';
+// a reading screen's address (#/p/<id>[/<tab>[/<timepoint>]]), and whether it is on the tab the patient opens on
+const READING = /^#\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/;
+const firstTab = (p, hash) => (READING.exec(hash)?.[2] || defaultSeries(p)) === defaultSeries(p);
 route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s, key) => {
   const p = patients[id]; if (!p) return go('#/');
   // the no-pre-warming group keeps the Induction room tab, which says so and asks consent and the before-surgery comfort
@@ -198,7 +201,7 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
     sw = null;
     if (!quick || Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
     const i = TABS.findIndex(([x]) => x === s), n = TABS[i + (dx < 0 ? 1 : -1)];
-    if (n) go(tabHref(n[0]));
+    if (n) goTab(tabHref(n[0]), n[0] === defaultSeries(p));
   };
   view.addEventListener('touchstart', swStart, { passive: true });
   view.addEventListener('touchend', swEnd, { passive: true });
@@ -515,6 +518,9 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
   cleanup.push(stopHold, () => { view.onpointerdown = view.onpointerup = view.onpointercancel = view.onpointerleave = view.onclick = null; });
   view.onclick = e => {
     const t = e.target;
+    // a tab or timepoint of this patient's readings: no new Back step for each (goTab)
+    const to = t.closest('a[href^="#/p/"]')?.getAttribute('href');
+    if (to && READING.exec(to)?.[1] === id) { e.preventDefault(); return goTab(to, firstTab(p, to)); }
     if (t.closest('.sealed') && t.closest('button, .card, .chip, [data-ev], [data-attime]')) return toast(sealedMsg(p, t.closest('.times') ? null : s));
     const st = t.closest('[data-step]');
     if (st && e.detail === 0) { bump(st.dataset.c, +st.dataset.step); draw(); return; } // keyboard
@@ -554,11 +560,11 @@ route(/^\/p\/(\w+)(?:\/(?:read\/)?(prewarm|iotemp|haemo)(?:\/(\w+))?)?$/, (id, s
       if (s === 'prewarm' && pt.min != null && pt.min === WARM_MIN[val(p, 'arm')]) {
         if (settings.me && !val(p, 'sign_prewarm')) set(p, 'sign_prewarm', `${settings.me} ${new Date().toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })} ${nowHM()}`);
         toast(settings.me ? 'Pre-warming complete. Now the intra-op temps.' : 'Last pre-warming reading saved. Add your initials in Settings to mark it complete.');
-        go(`#/p/${id}/iotemp`);
+        goTab(`#/p/${id}/iotemp`, defaultSeries(p) === 'iotemp');
         return;
       }
       const next = pts.slice(pts.indexOf(pt) + 1).find(x => !savedAt(p, s, x.key));
-      go(`#/p/${id}/${s}/` + (next ? next.key : pt.key));
+      goTab(`#/p/${id}/${s}/` + (next ? next.key : pt.key), s === defaultSeries(p));
       return;
     }
     if (t.closest('[data-done]')) {
