@@ -16,7 +16,7 @@ node .devkit/tools/check.mjs || fail=1
 for f in prewarm/test/*.test.mjs; do node "$f" || fail=1; done
 # browser tests in parallel; a hung one is stopped after 10 minutes
 pids=()
-for t in e2e edge.e2e gaps.e2e fullcase.e2e scan.e2e scan-live.e2e scan-burst.e2e; do
+for t in e2e edge.e2e back.e2e gaps.e2e fullcase.e2e scan.e2e scan-live.e2e scan-burst.e2e; do
   timeout -s KILL 600 node "prewarm/test/$t.mjs" >"$OUT/$t.txt" 2>&1 & pids+=("$!:$t")
 done
 for pt in "${pids[@]}"; do

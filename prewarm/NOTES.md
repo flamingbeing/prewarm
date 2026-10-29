@@ -49,7 +49,11 @@ are in the owner's private notes.
 - **Updates wait for a quiet moment** (app-update 0.2.0, 25 Oct 2026): the take-over reload waits while a reading is half
   entered, a sheet or question is open, someone is typing or saves are sending (`js/sync-rules.js` `reloadOk`), and is
   tried again when the tab is hidden or shown, the screen changes, or the last save has gone.
-- **Look: as before the move** (28 Oct 2026, owner: ported apps look like their originals). The kit (app-ui rc.27)
+- **Back with tabs** (29 Oct 2026, owner, as Android apps do it): moving between a patient's reading tabs and their
+  timepoints adds at most one Back step. Back on another tab goes to the tab the patient opened on (`defaultSeries`),
+  Back there goes back to the list; forms and other screens opened from a tab still close first. Every such move goes
+  through `goTab` (`js/ui-core.js`, app-ui's `tabBack`; a plain step if the kit can't load). Test: `back.e2e.mjs`.
+- **Look: as before the move** (28 Oct 2026, owner: ported apps look like their originals). The kit (app-ui, rc.42 since 29 Oct)
   loads theme.css only; `applyTheme({ accent: '#002f6c', look: 'c', surface: 'grey' })` and the token bridge at the top
   of `style.css` give the NUHS app's light values (0.0% pixel diff per screen at 390 and 1280; Settings adds the Look
   block). The kit's bare `button`/`select`/`input`/`textarea` and `h1-h3` rules are reset to the browser's in
