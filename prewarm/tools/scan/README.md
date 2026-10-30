@@ -87,6 +87,20 @@ change); it prints why any field was not placed (the paper form has no per-readi
   with a stand-in reader, one deliberate misread that must be flagged). Needs OpenCV, LibreOffice, `pdftoppm`.
 - `node prewarm/tools/scan/review.e2e.mjs <scan.json>` (review page at phone size, axe), static server on 8080.
 
+## On the phone (plain JS ports, not wired into the app yet)
+
+`prewarm/js/scan-align.js` (align.py without find_sheet: affine fit onto the printed lines, refine_tables,
+line_score), `scan-crop.js` (the ink layer, has_writing, through_arrow, mark_groups, crop_rect, ticks) and
+`scan-checks.js` (plausible.py, series_checks, fill_arrows): pure functions, no libraries, no DOM.
+
+- `python3 make-form-map.py --form-dir <form dir> --out <dir>`: the phone's `form-map.json` (fields, crop rects and
+  tables in 1800x2400 page px, what is sent on) plus a 450x600 grey template per page (each pixel the darkest of its
+  4x4 block, so thin lines survive).
+- `python3 parity.py`: rebuilds `prewarm/test/scan-parity/` (a made-up form, three phone-like photos of it, Python's
+  crops and the true positions). Needs OpenCV.
+- In CI: `scan-align`, `scan-crop`, `scan-checks` and `scan-parity` in `prewarm/test/` (the last checks the JS crops
+  against Python's and the truth, within 3 px).
+
 ## Where it stands
 
 Tried on a handful of real pages with a stand-in reader (a person-equivalent reading the saved crops, via
