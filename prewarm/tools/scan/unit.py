@@ -11,6 +11,7 @@ YN = [[0, 'No'], [1, 'Yes']]; TH = [[-3, '−3 Cold'], [0, '0 Neutral'], [3, '+3
 # numbers: whole, decimal, 3-digit temperature, wide skin range, minus signs
 assert p.clean(F('age', 'int'), '68') == (68, [])
 assert p.clean(F('prewarm_0_core', 'num'), '365') == (36.5, [])
+assert p.clean(F('pre_plt', 'num', unit='×10⁹/L'), '270') == (270.0, [])   # not a temperature
 assert p.clean(F('iotemp_base_chest', 'num'), '25.9') == (25.9, [])                 # cold theatre skin is fine
 assert p.clean(F('prewarm_0_core', 'num'), '45')[1] == ['outside 30-42']
 assert p.clean(F('io_ebl', 'int'), '500') == (500, [])
