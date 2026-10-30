@@ -92,7 +92,50 @@ export function guessCorners(data, w, h) {
   }
   const corners = [tl, tr, br, bl];
   if (!isConvex(corners) || quadArea(corners) < n * 0.1) return { corners: fallback, found: false };
-  return { corners, found: true };
+  return { corners: edgeCorners(lab, bestId, w, h, corners) || corners, found: true };
+}
+
+// A line through most of pts (x = a*t + b along t; small deterministic RANSAC, then a least-squares refit), or null.
+function robustLine(pts, tol = 2, share = 0.6) {
+  const k = pts.length; if (k < 20) return null;
+  let best = null, bestN = 0, seed = 7;
+  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) % k;
+  for (let it = 0; it < 150; it++) {
+    const p = pts[rnd()], q = pts[rnd()]; if (Math.abs(q[0] - p[0]) < k / 8) continue;
+    const a = (q[1] - p[1]) / (q[0] - p[0]), b = p[1] - a * p[0];
+    let c = 0; for (const r of pts) if (Math.abs(a * r[0] + b - r[1]) <= tol) c++;
+    if (c > bestN) { bestN = c; best = [a, b]; }
+  }
+  if (!best || bestN < k * share) return null;
+  let st = 0, sv = 0, stt = 0, stv = 0, m = 0;
+  for (const r of pts) if (Math.abs(best[0] * r[0] + best[1] - r[1]) <= tol) { st += r[0]; sv += r[1]; stt += r[0] * r[0]; stv += r[0] * r[1]; m++; }
+  const den = m * stt - st * st; return den ? [(m * stv - st * sv) / den, (sv * stt - st * stv) / den] : best;
+}
+
+// Corners from the page's four straight sides rather than its four extreme points (owner's photos, 30 Oct 2026: an
+// envelope touching the page dragged a corner to the frame's corner; a folded corner cuts one off). Each side is the
+// blob's outline seen from that side (topmost pixel per column, and so on) less points on the frame's edge, fitted by
+// a line that most of it follows; corners are where neighbouring sides meet. Null when a side has no clear line (e.g. a
+// page turned near 45 degrees), so the extremes are kept.
+function edgeCorners(lab, id, w, h, ext) {
+  const top = [], bot = [], left = [], right = [];
+  for (let x = 0; x < w; x++) {
+    let y0 = -1, y1 = -1; for (let y = 0; y < h; y++) if (lab[y * w + x] === id) { if (y0 < 0) y0 = y; y1 = y; }
+    if (y0 > 1) top.push([x, y0]); if (y1 >= 0 && y1 < h - 2) bot.push([x, y1]);
+  }
+  for (let y = 0; y < h; y++) {
+    let x0 = -1, x1 = -1; for (let x = 0; x < w; x++) if (lab[y * w + x] === id) { if (x0 < 0) x0 = x; x1 = x; }
+    if (x0 > 1) left.push([y, x0]); if (x1 >= 0 && x1 < w - 2) right.push([y, x1]);
+  }
+  const T = robustLine(top), B = robustLine(bot), L = robustLine(left), R = robustLine(right);
+  if (!T || !B || !L || !R) return null;
+  // y = a*x + b meets x = c*y + d
+  const meet = ([a, b], [c, d]) => { const den = 1 - a * c; if (Math.abs(den) < 1e-6) return null; const y = (a * d + b) / den; return { x: c * y + d, y }; };
+  const q = [meet(T, L), meet(T, R), meet(B, R), meet(B, L)];
+  const slack = Math.max(w, h) * 0.05; // a corner may fall a little outside the frame (cut-off or folded corner)
+  if (q.some(p => !p || p.x < -slack || p.y < -slack || p.x > w - 1 + slack || p.y > h - 1 + slack)) return null;
+  if (!isConvex(q) || quadArea(q) < quadArea(ext) * 0.5) return null;
+  return q.map(p => ({ x: Math.min(w - 1, Math.max(0, p.x)), y: Math.min(h - 1, Math.max(0, p.y)) }));
 }
 
 // ---------- perspective
