@@ -87,7 +87,7 @@ change); it prints why any field was not placed (the paper form has no per-readi
   with a stand-in reader, one deliberate misread that must be flagged). Needs OpenCV, LibreOffice, `pdftoppm`.
 - `node prewarm/tools/scan/review.e2e.mjs <scan.json>` (review page at phone size, axe), static server on 8080.
 
-## On the phone (plain JS ports, not wired into the app yet)
+## On the phone (plain JS ports; Read on phone, a trial, off by default)
 
 `prewarm/js/scan-align.js` (align.py without find_sheet: affine fit onto the printed lines, refine_tables,
 line_score), `scan-crop.js` (the ink layer, has_writing, through_arrow, mark_groups, crop_rect, ticks) and
@@ -100,6 +100,21 @@ line_score), `scan-crop.js` (the ink layer, has_writing, through_arrow, mark_gro
   crops and the true positions). Needs OpenCV.
 - In CI: `scan-align`, `scan-crop`, `scan-checks` and `scan-parity` in `prewarm/test/` (the last checks the JS crops
   against Python's and the truth, within 3 px).
+
+- `scan-read.js` (process_page and build_doc: one page -> the cells to read, the two readings -> value and flags, the
+  import document), run per page in `scan-read-worker.js`, driven by `scan-phone.js`. In CI: `scan-read.test.mjs` and
+  `scan-phone.e2e.mjs`.
+- `python upload-form-map.py <make-form-map.py output> [version]` (on the study computer, gcloud signed in): puts the
+  form map and templates in Firestore `forms/scan`, where the phone fetches them. They show the whole form, so they are
+  never committed here.
+- `node make-worker-fields.mjs <form-map.json>`: regenerates `worker/fields.js` (ids, types, labels only) after the
+  form map changes.
+
+With "Read on phone" switched on (Scan pages, this phone only), the "Read on phone" button reads the subject's pages: the
+form map comes from `forms/scan`, each page is lined up and cut up on the phone, the sendable cells (numbers, codes,
+times; never IDs, dates, names or free text) go to the Worker's `/scan-api/read`, and the phone writes its own pending
+import `<scan>-phone-<stamp>` (via `phone`) beside the study computer's. Admins approve it in Scan imports as usual.
+The upload to the study computer is unchanged and stays the default.
 
 ## Where it stands
 

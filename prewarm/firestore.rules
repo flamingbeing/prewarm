@@ -37,13 +37,18 @@ rules_version = '2';
 //                   Stopping the link (deleting shares/{token}) ends every guest's access at once.
 //   forms/blank     the blank paper data collection form (.docx, base64), uploaded by an admin:
 //                   { b64, name, size, setAt, setBy }; members and admins read it (the Form view fills it in).
+//   forms/scan      the paper form's map for reading scans on the phone (tools/scan/upload-form-map.py from Firetop, whose
+//                   sign-in bypasses these rules): { version, map (form-map.json as text), templates: [PNG base64 per
+//                   page], setAt, setBy }; members and admins read it, nobody writes it from the app.
 //   scanImports/{id}  Firetop's reading of one received scan, waiting for an admin:
 //                   { scan, subject?, createdAt, status: 'pending'|'approved'|'rejected', pages,
 //                   fields: { fieldId: { v, flags, page?, box?: { x, y, w, h } } }, reviewedBy?, reviewedAt? }. Values only, no
 //                   photos or crops: subject is the Subject ID typed on the phone, box the field's place on its page (fractions).
-//                   No app user can create one: Firetop writes them with its own Google sign-in. Admins read them and can only
-//                   mark a pending one approved or rejected (nothing else in it changes). Approving copies values into a
-//                   patient through the patients rules below.
+//                   Firetop writes them with its own Google sign-in. A phone with "Read on phone" on (phone-direct scan,
+//                   30 Oct 2026) creates its own, pending only: id <scan>-phone-<stamp>, via 'phone', by its own user id;
+//                   it can't read, change or delete it afterwards. Admins read them and can only mark a pending one
+//                   approved or rejected (nothing else in it changes). Approving copies values into a patient through
+//                   the patients rules below.
 //   payments/{pid}  the participant's email and PayNow number for their payment (owner, 21 Oct 2026), kept out of the
 //                   patient record: { site, pid, sid, email?, paynow?, setAt, setBy, emailSent?, paid?, cleared? }
 //                   (the last three { t, by }). The patient's hospital team (or an admin) creates it and may replace
@@ -113,6 +118,16 @@ service cloud.firestore {
     }
 
     match /scanImports/{id} {
+      function phoneImport(d) {
+        return d.keys().hasOnly(['scan', 'subject', 'createdAt', 'status', 'via', 'by', 'pages', 'fields'])
+          && d.keys().hasAll(['scan', 'createdAt', 'status', 'via', 'by', 'pages', 'fields'])
+          && d.status == 'pending' && d.via == 'phone' && d.by == request.auth.uid
+          && id.matches('[A-Za-z0-9_-]{1,80}-phone-[a-z0-9]{1,12}')
+          && d.scan is string && d.scan.size() > 0 && d.scan.size() <= 80
+          && (!('subject' in d) || (d.subject is string && d.subject.size() <= 40))
+          && d.createdAt is number && d.pages is list && d.pages.size() <= 14 && d.fields is map && d.fields.size() <= 500;
+      }
+      allow create: if (member() || admin()) && phoneImport(request.resource.data);
       allow read, delete: if admin();
       allow update: if admin() && resource.data.status == 'pending'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedBy', 'reviewedAt'])

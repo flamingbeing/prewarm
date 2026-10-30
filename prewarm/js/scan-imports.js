@@ -77,8 +77,9 @@ export function cropRect(box, W, H) {
   return { sx: Math.round(x0 * W), sy: Math.round(y0 * H), sw: Math.max(1, Math.round((x1 - x0) * W)), sh: Math.max(1, Math.round((y1 - y0) * H)) };
 }
 
-// the round of a scan: <scan> is the first read, <scan>-2 a retake or a late page read after it
-const roundOf = x => { const m = /-(\d+)$/.exec(x.id); return m && x.scan && x.id === `${x.scan}-${m[1]}` ? Number(m[1]) : 1; };
+// the round of a scan: <scan> is the first read, <scan>-2 a retake or a late page read after it (a phone's own reading,
+// <scan>-phone-<stamp>, has no round)
+const roundOf = x => { const m = x.via !== 'phone' && /-(\d+)$/.exec(x.id); return m && x.scan && x.id === `${x.scan}-${m[1]}` ? Number(m[1]) : 1; };
 
 export function mount({ view, esc, toast, cloud, patients, sid, val, setField, photo }) {
   const when = t => new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -98,7 +99,7 @@ export function mount({ view, esc, toast, cloud, patients, sid, val, setField, p
     state.open = null;
     const pending = x => x.status === 'pending';
     const flagged = x => rowsFor(x).rows.filter(r => r.flags.length).length; // replacements show once the patient is known
-    const line = x => `<li><button class="secondary siimp" data-open="${esc(x.id)}"><span>${esc(when(x.createdAt))}${roundOf(x) > 1 ? ` · round ${roundOf(x)}` : ''}</span>
+    const line = x => `<li><button class="secondary siimp" data-open="${esc(x.id)}"><span>${esc(when(x.createdAt))}${roundOf(x) > 1 ? ` · round ${roundOf(x)}` : ''}${x.via === 'phone' ? ' · read on phone' : ''}</span>
       <small>${Object.keys(x.fields || {}).length} values${pending(x) ? (flagged(x) ? ` · ${flagged(x)} flagged` : ' · none flagged') : ' · ' + esc(x.status)}</small></button></li>`;
     const card = g => `<section class="sigrp"><h3>${g.subject ? esc(g.subject) : 'No Subject ID'}</h3><ul class="plain" role="list">${g.imports.map(line).join('')}</ul></section>`;
     const groups = groupImports(state.list), pend = groups.filter(g => g.imports.some(pending)), done = groups.filter(g => !g.imports.some(pending));
@@ -151,7 +152,7 @@ export function mount({ view, esc, toast, cloud, patients, sid, val, setField, p
     const bad = (imp.pages || []).filter(x => x.accepted === false).length;
     const row = r => rowHtml(r, idx.get(r), pend, !!p);
     paint(`<div class="stack siimport"><button class="secondary" id="siback">‹ All imports</button>
-      <h2>${imp.subject ? esc(imp.subject) : 'No Subject ID'}<small class="muted"> · ${esc(when(imp.createdAt))}${roundOf(imp) > 1 ? ` · round ${roundOf(imp)}` : ''}</small></h2>
+      <h2>${imp.subject ? esc(imp.subject) : 'No Subject ID'}<small class="muted"> · ${esc(when(imp.createdAt))}${roundOf(imp) > 1 ? ` · round ${roundOf(imp)}` : ''}${imp.via === 'phone' ? ' · read on phone' : ''}</small></h2>
       ${pend ? '' : `<p class="muted">${esc(imp.status)}${imp.reviewedBy ? ' by ' + esc(imp.reviewedBy) : ''}</p>`}
       ${bad ? `<p class="note">${bad} photo${bad > 1 ? 's' : ''} did not line up and ${bad > 1 ? 'were' : 'was'} not read: retake and send again.</p>` : ''}
       ${skipped.length ? `<p class="muted small">${skipped.length} value${skipped.length > 1 ? 's' : ''} not in this app’s form, left out.</p>` : ''}

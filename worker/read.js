@@ -3,7 +3,7 @@
 // back. Nothing is stored or logged: no image and no text.
 //   POST /scan-api/read   JSON {page: 1-14, crops: [{id, png: <base64 PNG>}]}   (at most 40 crops, each at most 40 KB)
 //     -> [{id, a: {text, legible}, b: {text, legible}}]
-// Only fields in worker/fields.js of type num or time are read: any other id is refused (400), so a buggy or tampered phone
+// Only fields in worker/fields.js of type num, int, code or time are read: any other id is refused (400), so a buggy or tampered phone
 // cannot send a name, ID, date or free text to the model. Same Access check as worker/scan.js.
 // Set in Cloudflare (never in this repo): ACCESS_TEAM and SCAN_ACCESS_AUD (as for scan.js) and ANTHROPIC_API_KEY.
 import { verifyAccess } from './access.js';
@@ -13,7 +13,7 @@ export { READ_PATH } from './routes.js';
 
 export const MAX_CROP = 40 * 1024, MAX_CROPS = 40;
 const MAX_BODY = MAX_CROPS * (Math.ceil(MAX_CROP / 3) * 4 + 200) + 1024;
-const READABLE = new Set(['num', 'time']);
+const READABLE = new Set(['num', 'int', 'code', 'time']);
 const MODEL = 'claude-haiku-5-5';
 const API = 'https://api.anthropic.com/v1/messages';
 const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -32,7 +32,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), { status
 
 function expectOf(f) {
   if (f.opts && f.opts.length) return 'one of ' + f.opts.map(o => Array.isArray(o) ? o[1] : o).join(', ') + ' (often just the first letter, or the number)';
-  return f.type === 'time' ? 'a 24-hour clock time such as 07:05' : 'a decimal number';
+  return f.type === 'time' ? 'a 24-hour clock time such as 07:05' : f.type === 'int' ? 'a whole number' : 'a decimal number';
 }
 const promptFor = (tpl, f) => tpl.replace('{label}', () => f.label).replace('{unit}', () => f.unit ? ` (${f.unit})` : '').replace('{expect}', () => expectOf(f));
 

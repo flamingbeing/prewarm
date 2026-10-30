@@ -57,6 +57,8 @@ export async function pagePhoto(scan, subject, page) {
 export const CAN_SEND = typeof location !== 'undefined' && (location.hostname === 'prewarmstudy.anawj.com' && !/[?&]demo\b/.test(location.search)
   || location.hostname === 'localhost' && /[?&]scantest\b/.test(location.search));
 const API = '/scan-api/';
+// the browser tests stand in for Firestore on localhost (?scantest): window.__scanCloud { scanForm, addScanImport }
+const testCloud = () => typeof location !== 'undefined' && location.hostname === 'localhost' && /[?&]scantest\b/.test(location.search) && window.__scanCloud || null;
 const SUBJECT = /^[A-Za-z0-9][A-Za-z0-9 _./-]{0,39}$/; // the Subject IDs the Worker takes (sent with each page)
 const signedIn = async () => {
   try { const r = await fetch(API + 'whoami', { redirect: 'manual', cache: 'no-store' }); return r.ok && (await r.json()).email; } catch { return null; } // null: no signal
@@ -94,8 +96,8 @@ const MODES = [['auto', 'Auto'], ['bw', 'Black and white'], ['color', 'Colour']]
 const tick = () => new Promise(r => setTimeout(r, 30)); // let the screen repaint between the heavy steps
 
 // deps: { view, esc, toast, subjects: () => [Subject IDs on this phone] }
-export function mount({ view, esc, toast, subjects }) {
-  let subject = '', sel = null, urls = [], num = '1', ed = null, queue = [], saving = Promise.resolve(), auth = null, pumping = false, again = false, retryT = 0, pollT = 0, gone = false;
+export function mount({ view, esc, toast, subjects, cloud }) {
+  let subject = '', sel = null, urls = [], num = '1', ed = null, queue = [], saving = Promise.resolve(), auth = null, pumping = false, again = false, retryT = 0, pollT = 0, gone = false, phoneBusy = false;
   let run = null, one = null; // run: a burst under way { labels, i }; one: the next shot is just this page { label } (a slot, Retake)
   const failed = new Map(); // page id -> why it was not sent (until the next try)
   const sending = new Set(), tries = new Map(), scans = new Map(); // pages going now; failed tries per page; subject -> scan id
@@ -119,13 +121,14 @@ export function mount({ view, esc, toast, subjects }) {
       <button class="secondary" id="scstop" hidden>Stop the burst here</button>
       <label class="secondary filebtn">Choose from photos<input id="scpick" type="file" accept="image/*" multiple hidden></label>
       <label class="tog"><input type="checkbox" id="sccamapp"><span>Use phone camera app<small>Instead of the live camera here, on this phone only. For a phone where the live camera is poor.</small></span></label>
+      <label class="tog" id="scphonelbl" hidden><input type="checkbox" id="scphoneon"><span>Read on phone<small>Also read the pages here and add the values to Scan imports, beside the study computer's reading. On this phone only; trial.</small></span></label>
       <label class="tog" id="scautosendlbl" hidden><input type="checkbox" id="scautosend"><span>Send each page when it is ready<small>To the study computer, in the background; with no signal they wait and go later. Pages marked Check wait for a look.</small></span></label>
     </div>
     <p id="scburstmsg" class="small scburstmsg" role="status" hidden></p>
     <div id="scselbar" class="scselbar" hidden><strong id="scselcount" role="status"></strong><button class="secondary" id="scselall">All</button><button class="secondary" id="scselnone">None</button><button class="secondary scseldel" id="scseldel">Delete</button><button class="secondary" id="scselcancel">Cancel</button></div>
     <p id="scprog" class="small" hidden></p>
     <div id="sclist" class="scgrid"></div>
-    <div id="scsend" hidden><button class="primary" id="scup">Send to the study computer</button><p id="scmsg" class="muted small" role="status"></p></div>
+    <div id="scsend" hidden><button class="primary" id="scup">Send to the study computer</button><button class="secondary" id="scphone" hidden>Read on phone</button><p id="scmsg" class="muted small" role="status"></p></div>
     <div id="scclear" class="ok-box scclear" hidden><p id="scclearmsg"></p><button class="secondary" id="scclearbtn">Clear these pages from this phone</button></div>
     <div id="scsave" hidden><button class="secondary" id="scdl">Save tidied pages to this phone</button></div>
     <dialog id="scdlg" class="scdlg"><img alt="Scanned page" id="scimg"><p id="scdlgwhy" class="scdlgwhy" hidden></p>
@@ -197,6 +200,7 @@ export function mount({ view, esc, toast, subjects }) {
     $$('#scsave').hidden = !pages.length;
     $$('#scsend').hidden = !pages.length || !CAN_SEND;
     const unsent = pages.filter(p => !p.sentAt).length;
+    $$('#scphone').hidden = !pref('phoneread', false) || phoneBusy;
     $$('#scup').hidden = !unsent; $$('#scup').textContent = autoSend() ? `Send now (${unsent} waiting)` : 'Send to the study computer';
     const states = pages.map(p => stateOf(p, sending, failed)), count = s => states.filter(x => x === s).length;
     const onPc = pages.length && states.every(s => !['phone', 'sending', 'failed'].includes(s));
@@ -733,6 +737,19 @@ export function mount({ view, esc, toast, subjects }) {
       if (isFinite(next) && autoSend() && auth !== false) later(next - Date.now());
     } finally { pumping = false; }
   }
+  // Read on phone (js/scan-phone.js): this subject's pages, read here; the upload above goes on as before
+  $$('#scphone').onclick = async () => {
+    if (phoneBusy || !subject) return;
+    phoneBusy = true; draw();
+    try {
+      const all = await allPages(), pages = view._pages, scan = scanOf(pages[0], all);
+      const put = async p => { const cur = await getPage(p.id); if (cur) await putPage({ ...cur, phoneRead: p.phoneRead }); };
+      const { readSubject } = await import('./scan-phone.js');
+      const r = await readSubject({ cloud: testCloud() || cloud, pages, subject, scan, put, progress: t => msg(esc(t)) });
+      msg(`Read ${r.pages} page${r.pages > 1 ? 's' : ''} on the phone: in Scan imports for an admin to check.`);
+    } catch (e) { msg('Not read on the phone: ' + esc(e.message)); }
+    finally { phoneBusy = false; draw(); }
+  };
   const send = (pages, hand) => { pages.filter(p => p && !p.sentAt).forEach(p => { wanted.add(p.id); waitTill.delete(p.id); }); if (hand && !pages.some(p => p && !p.sentAt)) msg('Everything is already sent.'); return pump(); };
   $$('#scup').onclick = () => send(view._pages, true);
 
@@ -785,6 +802,9 @@ export function mount({ view, esc, toast, subjects }) {
     if (ok) { pump(); poll(); }
   };
   $$('#scautosendlbl').hidden = !CAN_SEND;
+  $$('#scphonelbl').hidden = !CAN_SEND;
+  $$('#scphoneon').checked = pref('phoneread', false);
+  $$('#scphoneon').onchange = e => { setPref('phoneread', e.target.checked); draw(); };
   $$('#scautosend').checked = autoSend();
   $$('#scautosend').onchange = e => { setPref('autosend', e.target.checked); draw(); if (e.target.checked) pump(); };
   const online = () => { waitTill.clear(); pump(); };

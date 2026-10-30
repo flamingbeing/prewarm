@@ -55,7 +55,7 @@ route(/^\/scan$/, () => {
   header('Scan pages', '#/settings');
   if (!settings.scan) return paint('<p class="note">Turn on Scan pages in <a href="#/settings">Settings</a> first.</p>');
   paint('');
-  cleanup.push(scan.mount({ view, esc, toast, subjects: () => Object.values(patients).filter(p => !isGone(p)).map(sid) })); // stops the live camera
+  cleanup.push(scan.mount({ view, esc, toast, cloud, subjects: () => Object.values(patients).filter(p => !isGone(p)).map(sid) })); // stops the live camera
 });
 route(/^\/scanimports$/, () => {
   header('Scan imports', '#/settings');
