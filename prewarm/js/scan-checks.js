@@ -53,7 +53,8 @@ export function clean(f, text) {
   }
   if (kind === 'num' || kind === 'int' || kind === 'code') {
     if (text.toUpperCase() === 'NA') return ['NA', []];
-    const n = toNum(kind === 'num' ? normaliseTemp(text) : text);
+    const temp = kind === 'num' && (!f.unit || f.unit === '°C');   // 365 -> 36.5 only for a temperature: 270 platelets stay 270
+    const n = toNum(temp ? normaliseTemp(text) : text);
     if (Number.isNaN(n)) return [text, ['not a number']];
     const whole = kind === 'int' || f.id.endsWith('_ts');
     if (whole && n !== Math.trunc(n)) return [text, ['should be a whole number']];

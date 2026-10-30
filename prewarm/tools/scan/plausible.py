@@ -54,7 +54,7 @@ def clean(f, text):
     if kind in ('num', 'int', 'code'):
         if text.upper() == 'NA':
             return 'NA', []
-        t = normalise_temp(text) if kind == 'num' else text
+        t = normalise_temp(text) if kind == 'num' and f.get('unit') in (None, '°C') else text   # 270 platelets stay 270
         try:
             n = float(t)
         except ValueError:
