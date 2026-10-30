@@ -31,6 +31,20 @@ const photo = img(W, Hh, (x, y) => inside(x, y) ? [235, 235, 230, 255] : [60, 50
 const g = guessCorners(photo, W, Hh);
 assert.equal(g.found, true, 'page found');
 g.corners.forEach((c, i) => { near(c.x, page[i].x, 4, 'guess x' + i); near(c.y, page[i].y, 4, 'guess y' + i); });
+// an envelope in the frame's corner touching the page (owner's photos, 30 Oct 2026): the corner stays on the page
+const env = (x, y) => x < 85 && y < 45;
+const g2 = guessCorners(img(W, Hh, (x, y) => inside(x, y) || env(x, y) ? [235, 235, 230, 255] : [60, 50, 45, 255]), W, Hh);
+assert.equal(g2.found, true, 'page found beside the envelope');
+g2.corners.forEach((c, i) => { near(c.x, page[i].x, 4, 'envelope x' + i); near(c.y, page[i].y, 4, 'envelope y' + i); });
+// a folded corner (bottom right turned under): the corner is where the two sides would meet
+const fold = (x, y) => x + y > 440;
+const g3 = guessCorners(img(W, Hh, (x, y) => inside(x, y) && !fold(x, y) ? [235, 235, 230, 255] : [60, 50, 45, 255]), W, Hh);
+g3.corners.forEach((c, i) => { near(c.x, page[i].x, 4, 'fold x' + i); near(c.y, page[i].y, 4, 'fold y' + i); });
+// a page turned 30 degrees still gives its own four corners
+const tc = Math.cos(Math.PI / 6), ts = Math.sin(Math.PI / 6), turned = (x, y) => Math.abs((x - 160) * tc + (y - 120) * ts) < 70 && Math.abs(-(x - 160) * ts + (y - 120) * tc) < 90;
+const g4 = guessCorners(img(W, Hh, (x, y) => turned(x, y) ? [235, 235, 230, 255] : [60, 50, 45, 255]), W, Hh);
+[[-70, -90], [70, -90], [70, 90], [-70, 90]].map(([u, v]) => [160 + u * tc - v * ts, 120 + u * ts + v * tc])
+  .forEach(([x, y]) => assert.ok(g4.corners.some(c => Math.hypot(c.x - x, c.y - y) < 4), 'turned corner ' + Math.round(x) + ',' + Math.round(y)));
 const empty = guessCorners(img(100, 100, () => [120, 120, 120, 255]), 100, 100);
 assert.equal(empty.found, false, 'plain frame: no page, whole frame less a margin');
 
