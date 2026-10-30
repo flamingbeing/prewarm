@@ -2,7 +2,8 @@
 // and decides which folder an address may see (routes.js). No data, no storage: just files, plus the scan upload relay
 // on prewarmstudy.anawj.com/scan-api/ (scan.js), the only part with secrets.
 // wrangler.jsonc: "run_worker_first" sends every request here.
-import { resolve } from './routes.js';
+import { resolve, READ_PATH } from './routes.js';
+import { handleRead } from './read.js';
 import { handleScan, SCAN_HOST, SCAN_PREFIX } from './scan.js';
 
 const NOINDEX = 'noindex, nofollow';
@@ -10,6 +11,7 @@ const NOINDEX = 'noindex, nofollow';
 export default {
   async fetch(request, env) {
     const u0 = new URL(request.url);
+    if (u0.hostname === SCAN_HOST && u0.pathname === READ_PATH) return handleRead(request, env);
     if (u0.hostname === SCAN_HOST && u0.pathname.startsWith(SCAN_PREFIX)) return handleScan(request, env);
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
     const url = new URL(request.url);

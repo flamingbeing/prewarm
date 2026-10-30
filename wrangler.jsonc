@@ -1,7 +1,8 @@
 // Cloudflare Workers config. The Worker (worker/sites.js) serves this repo's files and decides which folder each
 // address may see (worker/routes.js). No data and no secrets in this file: settings the Worker needs are set in the
 // Cloudflare dashboard (keep_vars keeps them across deploys): the scan upload's ACCESS_TEAM, SCAN_ACCESS_AUD, SCAN_ORIGIN,
-// SCAN_CLIENT_ID and SCAN_CLIENT_SECRET (worker/scan.js).
+// SCAN_CLIENT_ID and SCAN_CLIENT_SECRET (worker/scan.js), and the crop reading's secret ANTHROPIC_API_KEY (worker/read.js; value only
+// in the dashboard).
 {
   "name": "prewarm",
   "main": "worker/sites.js",

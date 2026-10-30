@@ -17,6 +17,10 @@ export const SITES = {
 // Folders every host serves as they are (shared files, no data), e.g. ['/shared/']
 export const SHARED = [];
 
+// The crop-reading route (worker/read.js), under the scan upload's Access-guarded path; worker/sites.js sends it there
+// before the general scan relay (worker/scan.js).
+export const READ_PATH = '/scan-api/read';
+
 const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/;
 
 // -> { file } (a path inside the repo, or a folder ending in "/"), { redirect } (a public path, or a full address
