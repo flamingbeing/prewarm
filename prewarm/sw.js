@@ -16,7 +16,7 @@ const SHELL = [
   'js/app.js', 'js/ui-core.js', 'js/ui-sync.js', 'js/series.js', 'js/ui-home.js', 'js/ui-patient.js', 'js/ui-alerts.js', 'js/ui-data.js', 'js/ui-forms.js',
   'js/ui-word.js', 'js/ui-pay.js', 'js/ui-settings.js', 'js/ui-share.js', 'js/ui-admin.js', 'js/ui-export.js',
   'js/keypad.js', 'js/schema.js', 'js/headers.js', 'js/store.js', 'js/xlsx.js', 'js/export.js', 'js/cloud.js', 'js/firebase-config.js', 'js/vendor/qrcode.js',
-  'js/docx-fill.js', 'js/wordform.js', 'js/wordview.js', 'js/scan.js', 'js/scan-geom.js', 'js/scan-imports.js', 'js/pay.js', 'js/sync-rules.js', 'js/vendor/jszip.min.js', 'js/vendor/docx-preview.min.js',
+  'js/docx-fill.js', 'js/wordform.js', 'js/wordview.js', 'js/scan.js', 'js/scan-geom.js', 'js/scan-imports.js', 'js/scan-phone.js', 'js/scan-read.js', 'js/scan-read-worker.js', 'js/scan-align.js', 'js/scan-crop.js', 'js/scan-checks.js', 'js/pay.js', 'js/sync-rules.js', 'js/vendor/jszip.min.js', 'js/vendor/docx-preview.min.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
   // the app kit (app-ui: early.js, the theme CSS and the Look switch with its imports), one exact version: without it the app opens unstyled offline
   'https://core.anawj.com/ui/1.0.0-rc.42/theme/early.js',

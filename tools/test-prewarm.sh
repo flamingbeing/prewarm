@@ -23,5 +23,8 @@ for pt in "${pids[@]}"; do
   if wait "${pt%%:*}"; then tail -1 "$OUT/${pt#*:}.txt" | cut -c1-100
   else echo "FAIL ${pt#*:} (full output: $OUT/${pt#*:}.txt)"; grep -v '^\s*at ' "$OUT/${pt#*:}.txt" | tail -8 | cut -c1-300; fail=1; fi
 done
+# Read on phone lines pages up in the browser (heavy): after the others, so it doesn't slow them into timeouts
+if timeout -s KILL 600 node prewarm/test/scan-phone.e2e.mjs >"$OUT/scan-phone.e2e.txt" 2>&1; then tail -1 "$OUT/scan-phone.e2e.txt"
+else echo "FAIL scan-phone.e2e (full output: $OUT/scan-phone.e2e.txt)"; tail -8 "$OUT/scan-phone.e2e.txt" | cut -c1-300; fail=1; fi
 echo "$( [ $fail = 0 ] && echo 'all prewarm checks passed' || echo 'SOME PREWARM CHECKS FAILED' ) in $(( $(date +%s) - start ))s"
 exit $fail

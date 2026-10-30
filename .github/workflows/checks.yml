@@ -61,4 +61,6 @@ jobs:
           for pt in "${pids[@]}"; do
             if wait "${pt%%:*}"; then echo "ok ${pt#*:}"; else echo "FAIL ${pt#*:}"; grep -v '^\s*at ' "${pt#*:}.txt" | tail -12 | cut -c1-300; fail=1; fi
           done
+          # Read on phone lines pages up in the browser (heavy): after the others, so it doesn't slow them into timeouts
+          timeout -s KILL 600 node prewarm/test/scan-phone.e2e.mjs || fail=1
           exit $fail

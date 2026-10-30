@@ -135,6 +135,8 @@ await t('stranger cannot remove an admin', assertFails(deleteDoc(doc(stranger, '
 const form = (extra = {}) => ({ b64: 'UEsDBA==', name: 'form.docx', size: 6, setAt: 5, setBy: ADMIN, ...extra });
 await t('admin uploads the blank form', assertSucceeds(setDoc(doc(adm, 'forms', 'blank'), form())));
 await t('member reads the blank form', assertSucceeds(getDoc(doc(a, 'forms', 'blank'))));
+await t('member reads the scan form map', assertSucceeds(getDoc(doc(a, 'forms', 'scan'))));
+await t('admin cannot write the scan form map from the app', assertFails(setDoc(doc(adm, 'forms', 'scan'), { version: '1', map: '{}', templates: [], setAt: 1, setBy: ADMIN })));
 await t('stranger cannot read the form', assertFails(getDoc(doc(stranger, 'forms', 'blank'))));
 await t('signed out cannot read the form', assertFails(getDoc(doc(nobody, 'forms', 'blank'))));
 await t('member cannot replace the form', assertFails(setDoc(doc(a, 'forms', 'blank'), form())));
@@ -242,8 +244,26 @@ await t('member cannot read scan imports', assertFails(getDoc(doc(a, 'scanImport
 await t('stranger cannot read scan imports', assertFails(getDoc(doc(stranger, 'scanImports', 'scan1'))));
 await t('unverified admin email cannot read scan imports', assertFails(getDoc(doc(unv, 'scanImports', 'scan1'))));
 await t('nobody signed out reads scan imports', assertFails(getDoc(doc(nobody, 'scanImports', 'scan1'))));
-await t('admin cannot create a scan import', assertFails(setDoc(doc(adm, 'scanImports', 'scan2'), { scan: 'scan2', createdAt: 1, status: 'pending', fields: {} })));
-await t('member cannot create a scan import', assertFails(setDoc(doc(a, 'scanImports', 'scan2'), { scan: 'scan2', createdAt: 1, status: 'pending', fields: {} })));
+await t('admin cannot create a plain scan import', assertFails(setDoc(doc(adm, 'scanImports', 'scan2'), { scan: 'scan2', createdAt: 1, status: 'pending', fields: {} })));
+await t('member cannot create a plain scan import', assertFails(setDoc(doc(a, 'scanImports', 'scan2'), { scan: 'scan2', createdAt: 1, status: 'pending', fields: {} })));
+// read on the phone (30 Oct 2026): a signed-in phone creates a pending one of its own, then can't touch it
+const PH = 'scan2-phone-abc1';
+const phone = (by, extra = {}) => ({ scan: 'scan2', subject: 'DEMO-01', createdAt: 1, status: 'pending', via: 'phone', by, pages: [{ page: 1, accepted: true, score: 0.9 }], fields: { age: { v: '67', flags: [] } }, ...extra });
+await t('member creates a pending import read on the phone', assertSucceeds(setDoc(doc(a, 'scanImports', PH), phone('phoneA'))));
+await t('admin creates one read on the phone', assertSucceeds(setDoc(doc(adm, 'scanImports', 'scan3-phone-abc1'), phone('g-' + ADMIN, { scan: 'scan3' }))));
+await t('…not in another phone’s name', assertFails(setDoc(doc(a, 'scanImports', 'scan2-phone-abc2'), phone('phoneB'))));
+await t('…not already approved', assertFails(setDoc(doc(a, 'scanImports', 'scan2-phone-abc3'), phone('phoneA', { status: 'approved' }))));
+await t('…not marked as from Firetop', assertFails(setDoc(doc(a, 'scanImports', 'scan2-phone-abc4'), phone('phoneA', { via: 'firetop' }))));
+await t('…not with a review in it', assertFails(setDoc(doc(a, 'scanImports', 'scan2-phone-abc5'), phone('phoneA', { reviewedBy: ADMIN }))));
+await t('…not under a Firetop-style id', assertFails(setDoc(doc(a, 'scanImports', 'scan9'), phone('phoneA'))));
+await t('…not without its pages', assertFails(setDoc(doc(a, 'scanImports', 'scan2-phone-abc6'), (({ pages, ...r }) => r)(phone('phoneA')))));
+await t('stranger cannot create one', assertFails(setDoc(doc(stranger, 'scanImports', 'scan2-phone-abc7'), phone('g-someone@example.com'))));
+await t('signed out cannot create one', assertFails(setDoc(doc(nobody, 'scanImports', 'scan2-phone-abc8'), phone(''))));
+await t('the phone cannot read it back', assertFails(getDoc(doc(a, 'scanImports', PH))));
+await t('…or change it', assertFails(updateDoc(doc(a, 'scanImports', PH), { status: 'approved' })));
+await t('…or overwrite it', assertFails(setDoc(doc(a, 'scanImports', PH), phone('phoneA', { createdAt: 2 }))));
+await t('…or delete it', assertFails(deleteDoc(doc(a, 'scanImports', PH))));
+await t('admin approves the phone’s import', assertSucceeds(updateDoc(doc(adm, 'scanImports', PH), { status: 'approved', reviewedBy: ADMIN, reviewedAt: 5 })));
 await t('admin cannot change the scanned values', assertFails(updateDoc(doc(adm, 'scanImports', 'scan1'), { fields: { age: { v: '99', flags: [] } } })));
 await t('admin cannot approve in someone else’s name', assertFails(review(adm, { reviewedBy: 'other@example.com' })));
 await t('admin cannot set another status', assertFails(review(adm, { status: 'pending' })));

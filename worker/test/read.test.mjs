@@ -40,17 +40,17 @@ assert.equal(r.status, 503); assert.match((await r.json()).error, /ANTHROPIC_API
 // no token, another Access app's token, a bad signature: 401 and the model is never asked
 resetAccessCache(); calls = [];
 for (const jwt of [null, otherAud, good.slice(0, -4) + 'AAAA']) {
-  r = await handleRead(req({ page: 1, crops: [crop('p1.sample_temp')] }, { jwt }), env, fake());
+  r = await handleRead(req({ page: 1, crops: [crop('wt')] }, { jwt }), env, fake());
   assert.equal(r.status, 401, String(jwt).slice(-8));
 }
 assert.equal(calls.length, 0);
 
 // a good request: two reads per crop, in the order of the crops, with the right model settings and key
-r = await handleRead(req({ page: 1, crops: [crop('p1.sample_temp'), crop('p1.sample_start')] }), env, fake());
+r = await handleRead(req({ page: 1, crops: [crop('wt'), crop('pacu_in')] }), env, fake());
 assert.equal(r.status, 200);
 assert.deepEqual(await r.json(), [
-  { id: 'p1.sample_temp', a: { text: '12.5', legible: true }, b: { text: '12.6', legible: false } },
-  { id: 'p1.sample_start', a: { text: '12.5', legible: true }, b: { text: '12.6', legible: false } },
+  { id: 'wt', a: { text: '12.5', legible: true }, b: { text: '12.6', legible: false } },
+  { id: 'pacu_in', a: { text: '12.5', legible: true }, b: { text: '12.6', legible: false } },
 ]);
 assert.equal(calls.length, 4);
 const c0 = calls[0];
@@ -59,67 +59,70 @@ assert.equal(c0.init.headers['x-api-key'], 'test-key-not-real');
 assert.equal(c0.body.model, 'claude-haiku-5-5'); assert.equal(c0.body.max_tokens, 100); assert.deepEqual(c0.body.thinking, { type: 'disabled' });
 assert.equal(c0.body.messages[0].content[0].source.media_type, 'image/png');
 const prompts = calls.map(c => c.body.messages[0].content[1].text);
-assert.ok(prompts.some(p => p.includes('"Sample temperature" (°C)') && p.includes('a decimal number')), 'label, unit, expectation in prompt A');
+assert.ok(prompts.some(p => p.includes('"Weight" (kg)') && p.includes('a decimal number')), 'label, unit, expectation in prompt A');
 assert.ok(prompts.some(p => p.startsWith('Transcribe') && p.includes('a 24-hour clock time')), 'prompt B for a time cell');
 assert.ok(prompts.every(p => !p.includes('{label}') && !p.includes('{expect}')));
 assert.ok(calls.every(c => c.url.startsWith('https://api.anthropic.com/')), 'nothing goes anywhere else');
 
 // a field with options says so
 calls = [];
-await handleRead(req({ page: 2, crops: [crop('p2.sample_stage')] }), env, fake());
-assert.ok(calls[0].body.messages[0].content[1].text.includes('one of one, two, three'));
+await handleRead(req({ page: 2, crops: [crop('d1_pain')] }), env, fake());
+assert.ok(calls[0].body.messages[0].content[1].text.includes('one of 0, 1, 2, 3'));
+calls = [];
+await handleRead(req({ page: 1, crops: [crop('age')] }), env, fake());
+assert.ok(calls[0].body.messages[0].content[1].text.includes('a whole number'), 'an int cell asks for a whole number');
 
 // refused before anything is sent: IDs, dates, free text, unknown or odd ids, repeats
-for (const id of ['p1.sample_id', 'p1.sample_date', 'p2.sample_note', 'nope', '__proto__', 'constructor', 'toString']) {
+for (const id of ['antiplt_name', 'af', 'csurg_proc', 'subject_id', 'nope', '__proto__', 'constructor', 'toString']) {
   calls = [];
-  r = await handleRead(req({ page: 1, crops: [crop('p1.sample_temp'), crop(id)] }), env, fake());
+  r = await handleRead(req({ page: 1, crops: [crop('wt'), crop(id)] }), env, fake());
   assert.equal(r.status, 400, id); assert.equal(calls.length, 0, 'nothing sent for ' + id);
 }
 // bad input: 400
 const bad = [
-  'not json', { page: 0, crops: [crop('p1.sample_temp')] }, { page: 15, crops: [crop('p1.sample_temp')] }, { page: '1', crops: [crop('p1.sample_temp')] },
-  { page: 1 }, { page: 1, crops: [] }, { page: 1, crops: [{ id: 'p1.sample_temp' }] }, { page: 1, crops: [{ id: 'p1.sample_temp', png: 'not base64!' }] },
-  { page: 1, crops: [{ id: 'p1.sample_temp', png: Buffer.from('GIF89a....').toString('base64') }] },
-  { page: 1, crops: [crop('p1.sample_temp'), crop('p1.sample_temp')] },
+  'not json', { page: 0, crops: [crop('wt')] }, { page: 15, crops: [crop('wt')] }, { page: '1', crops: [crop('wt')] },
+  { page: 1 }, { page: 1, crops: [] }, { page: 1, crops: [{ id: 'wt' }] }, { page: 1, crops: [{ id: 'wt', png: 'not base64!' }] },
+  { page: 1, crops: [{ id: 'wt', png: Buffer.from('GIF89a....').toString('base64') }] },
+  { page: 1, crops: [crop('wt'), crop('wt')] },
 ];
 calls = [];
 for (const b of bad) assert.equal((await handleRead(req(b), env, fake())).status, 400, JSON.stringify(b).slice(0, 60));
 assert.equal(calls.length, 0);
 
 // size caps: a crop of 40 KB is fine, one byte-ish over is not; 40 crops fine, 41 not
-r = await handleRead(req({ page: 1, crops: [{ id: 'p1.sample_temp', png: png(MAX_CROP) }] }), env, fake());
+r = await handleRead(req({ page: 1, crops: [{ id: 'wt', png: png(MAX_CROP) }] }), env, fake());
 assert.equal(r.status, 200);
-r = await handleRead(req({ page: 1, crops: [{ id: 'p1.sample_temp', png: png(MAX_CROP + 10) }] }), env, fake());
+r = await handleRead(req({ page: 1, crops: [{ id: 'wt', png: png(MAX_CROP + 10) }] }), env, fake());
 assert.equal(r.status, 400); assert.match((await r.json()).error, /too big/);
 // MAX_CROPS distinct fields would be needed; the cap is checked before the ids, so repeats show it
-r = await handleRead(req({ page: 1, crops: Array.from({ length: MAX_CROPS + 1 }, () => crop('p1.sample_temp')) }), env, fake());
+r = await handleRead(req({ page: 1, crops: Array.from({ length: MAX_CROPS + 1 }, () => crop('wt')) }), env, fake());
 assert.equal(r.status, 400); assert.match((await r.json()).error, /At most 40/);
-r = await handleRead(req({ page: 1, crops: [crop('p1.sample_temp')], pad: 'x'.repeat(4e6) }), env, fake());
+r = await handleRead(req({ page: 1, crops: [crop('wt')], pad: 'x'.repeat(4e6) }), env, fake());
 assert.equal(r.status, 413);
 
 // wrong method, content type, origin
 assert.equal((await handleRead(req({}, { method: 'GET' }), env, fake())).status, 405);
 assert.equal((await handleRead(req('x', { type: 'text/plain' }), env, fake())).status, 415);
-assert.equal((await handleRead(req({ page: 1, crops: [crop('p1.sample_temp')] }, { origin: 'https://evil.example' }), env, fake())).status, 403);
+assert.equal((await handleRead(req({ page: 1, crops: [crop('wt')] }, { origin: 'https://evil.example' }), env, fake())).status, 403);
 
 // upstream trouble: 502 with no detail passed on (status, key, body)
 for (const reply of [() => new Response('{"error":"secret detail"}', { status: 500 }), () => { throw new Error('network'); }]) {
-  r = await handleRead(req({ page: 1, crops: [crop('p1.sample_temp')] }), env, fake(reply));
+  r = await handleRead(req({ page: 1, crops: [crop('wt')] }), env, fake(reply));
   assert.equal(r.status, 502); assert.doesNotMatch(JSON.stringify(await r.json()), /secret|test-key/);
 }
 // a reply that is not JSON reads as empty and not legible (as the Python reader does), not an error
-r = await handleRead(req({ page: 1, crops: [crop('p1.sample_temp')] }), env, fake(() => Response.json({ content: [{ type: 'text', text: 'I cannot tell' }] })));
+r = await handleRead(req({ page: 1, crops: [crop('wt')] }), env, fake(() => Response.json({ content: [{ type: 'text', text: 'I cannot tell' }] })));
 assert.deepEqual((await r.json())[0].a, { text: '', legible: false });
 assert.deepEqual(parseReading('{"text": 7, "legible": "yes"}'), { text: '7', legible: false });
 
 // nothing is logged
 const logged = []; const keep = { log: console.log, warn: console.warn, error: console.error };
 console.log = console.warn = console.error = (...a) => logged.push(a);
-await handleRead(req({ page: 1, crops: [crop('p1.sample_temp')] }), env, fake(() => new Response('x', { status: 500 })));
+await handleRead(req({ page: 1, crops: [crop('wt')] }), env, fake(() => new Response('x', { status: 500 })));
 Object.assign(console, keep);
 assert.equal(logged.length, 0);
 
 // registered in the Worker: the route answers there (401 without sign-in), and other scan-api paths still go to the relay
-const w = await worker.fetch(req({ page: 1, crops: [crop('p1.sample_temp')] }, { jwt: null }), { ...env, SCAN_ORIGIN: 'https://o.example.test', SCAN_CLIENT_ID: 'a', SCAN_CLIENT_SECRET: 'b' });
+const w = await worker.fetch(req({ page: 1, crops: [crop('wt')] }, { jwt: null }), { ...env, SCAN_ORIGIN: 'https://o.example.test', SCAN_CLIENT_ID: 'a', SCAN_CLIENT_SECRET: 'b' });
 assert.equal(w.status, 401); assert.match((await w.json()).error, /Sign in/);
 console.log('read.test.mjs ok');

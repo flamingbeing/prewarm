@@ -7,7 +7,8 @@
 //                  locked: phones that were closed drop it at their next open; admins write, the hospital's team reads)
 //   pacu/{token}   { site, pid, sid, created, f }      (the PACU nurse's link: the token is the secret; see firestore.rules)
 //   shares/{token} { site, pid, sid, created, by }  guests/{uid}_{pid} { token, pid, joinedAt }  (the Share subject link; see firestore.rules)
-//   scanImports/{id} { scan, subject?, createdAt, status, pages, fields: { id: { v, flags, page?, box? } }, reviewedBy?, reviewedAt? }  (Firetop writes, admins read and approve)
+//   scanImports/{id} { scan, subject?, createdAt, status, pages, fields: { id: { v, flags, page?, box? } }, reviewedBy?, reviewedAt? }  (Firetop writes, a phone with Read on phone adds pending ones, admins read and approve)
+//   forms/scan {version, map, templates} (the form map for reading scans on the phone; written from Firetop)
 //   forms/blank    { b64, name, size, setAt, setBy }        (the blank paper form, .docx; admins upload, members read)
 //   payments/{patient id} { site, pid, sid, email?, paynow?, setAt, setBy, emailSent?, paid?, cleared? }  (the team writes,
 //                  only admins read, tick and delete the email and PayNow; js/pay.js)
@@ -355,6 +356,18 @@ export async function scanImports() {
   const { db, F } = await sdk();
   const s = await F.getDocs(F.collection(db, 'scanImports'));
   return s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+// Read on phone (phone-direct scan): the form map and its page pictures, and this phone's own pending import.
+export async function scanForm() {
+  const { db, F } = await sdk();
+  let s;
+  try { s = await F.getDoc(F.doc(db, 'forms', 'scan')); } catch (e) { if (e?.code === 'permission-denied') return null; throw e; }
+  return s.exists() ? s.data() : null;
+}
+export async function addScanImport(id, doc) {
+  const { auth, db, F } = await sdk();
+  if (!auth.currentUser) throw Object.assign(new Error('signed out'), { code: 'permission-denied' });
+  await F.setDoc(F.doc(db, 'scanImports', id), { ...doc, by: auth.currentUser.uid });
 }
 export async function reviewScanImport(id, status) {
   const { auth, db, F } = await sdk();
