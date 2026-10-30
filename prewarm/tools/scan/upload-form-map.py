@@ -2,7 +2,7 @@
 
     python upload-form-map.py <folder with form-map.json and template-N.png> [version]
 
-The folder is make-form-map.py's output. It holds the whole paper form as pictures, so it stays on the study computer and in
+The folder is make-form-map.py's output. It holds the whole paper form as pictures, so it is kept privately and in
 Firestore (members and admins can read forms/scan; see prewarm/firestore.rules), never in this repository.
 Needs: gcloud signed in as the owner (its token bypasses the rules, as watch.py's does). SCAN_PROJECT picks the project
 (default prewarm-study). Replaces the previous map; phones pick it up the next time they read a subject.
