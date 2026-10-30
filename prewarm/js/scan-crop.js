@@ -97,6 +97,37 @@ export function cropRect(rect, cells, size) {
   return { outer: clamp([inner[0] - grow[0], inner[1] - grow[1], inner[2] + grow[0], inner[3] + grow[1]]), inner: clamp(inner) };
 }
 
+// Where a tick box's printed outline really is, near where the template puts it (owner's photo, 30 Oct 2026: a row
+// on a slightly bent page sat 15 px low, so the outline was taken for ink and two empty boxes read as ticked). Slides
+// the template's printed lines inside the box up to r px over the dark mask and keeps the place where most of them are
+// dark. Returns { rect, dx, dy, moved }: moved only when the print fits clearly better there than where it was, and
+// by more than one template pixel (Q page px).
+export function snapBox(dark, w, h, rect, tplQ, r = 20) {
+  const [x0, y0, x1, y1] = rect, qw = Math.floor(w / Q), pts = [];
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (tplQ[((y / Q) | 0) * qw + Math.min(qw - 1, (x / Q) | 0)] < 160) pts.push(x, y);
+  if (pts.length < 40) return { rect, dx: 0, dy: 0, moved: false };
+  const at = (x, y) => x >= 0 && y >= 0 && x < w && y < h && dark[y * w + x];
+  const fit = (dx, dy) => { let on = 0; for (let k = 0; k < pts.length; k += 2) { const x = pts[k] + dx, y = pts[k + 1] + dy; on += at(x, y) || at(x - 2, y) || at(x + 2, y) || at(x, y - 2) || at(x, y + 2) ? 1 : 0; } return on / (pts.length / 2); };
+  const here = fit(0, 0); let best = here, bx = 0, by = 0;
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {   // ties: the smaller step
+    const f = fit(dx, dy); if (f > best + 1e-9 || (f > best - 1e-9 && Math.abs(dx) + Math.abs(dy) < Math.abs(bx) + Math.abs(by))) { best = f; bx = dx; by = dy; }
+  }
+  const moved = best >= 0.6 && best - here >= 0.2 && Math.max(Math.abs(bx), Math.abs(by)) > Q;   // within a template pixel: in place
+  return moved ? { rect: [x0 + bx, y0 + by, x1 + bx, y1 + by], dx: bx, dy: by, moved } : { rect, dx: 0, dy: 0, moved };
+}
+
+// readTicks for one box that snapBox moved: the dark pixels in it less the template's print moved by the same step
+export function readMovedTick(dark, w, h, tplQ, snap, label) {
+  const [x0, y0, x1, y1] = snap.rect, bw = x1 - x0, bh = y1 - y0, qw = Math.floor(w / Q), printed = new Uint8Array(bw * bh), loc = new Uint8Array(bw * bh);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    const X = x0 + x - snap.dx, Y = y0 + y - snap.dy;   // the template's place for this pixel
+    printed[y * bw + x] = X >= 0 && Y >= 0 && X < w && Y < h && tplQ[((Y / Q) | 0) * qw + Math.min(qw - 1, (X / Q) | 0)] < 160 ? 1 : 0;
+  }
+  const grown = dilateMask(printed, bw, bh, 3);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const X = x0 + x, Y = y0 + y; loc[y * bw + x] = X >= 0 && Y >= 0 && X < w && Y < h && dark[Y * w + X] && !grown[y * bw + x] ? 1 : 0; }
+  return { ...readTicks(open2(loc, bw, bh), bw, bh, [{ rect: [0, 0, bw, bh], label }])[0], rect: snap.rect, moved: true };
+}
+
 // Tick or no tick for each box (ticks.py): stroke pixels inside the box / its side; a slash or cross is well above
 // CLEAR_TICK, an empty box near 0, anything between is 'unsure'. `center` is the same for the box's middle half.
 export const CLEAR_TICK = 0.5, CLEAR_EMPTY = 0.15;

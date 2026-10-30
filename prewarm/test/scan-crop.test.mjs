@@ -1,7 +1,7 @@
 // Scan pages: crop places and what the ink in a cell is (made-up marks only). node prewarm/test/scan-crop.test.mjs
 // The same cases as tools/scan/unit.py, drawn here with plain strokes instead of OpenCV text.
 import assert from 'node:assert/strict';
-import { cropRect, hasWriting, arrowShaft, throughArrow, markGroups, components, readTicks, inkLayer, open2, cut } from '../js/scan-crop.js';
+import { cropRect, hasWriting, arrowShaft, throughArrow, markGroups, components, readTicks, inkLayer, open2, cut, snapBox, readMovedTick } from '../js/scan-crop.js';
 
 const mask = (w, h) => ({ w, h, data: new Uint8Array(w * h) });
 const box = (m, x0, y0, x1, y1) => { for (let y = Math.max(0, y0); y < Math.min(m.h, y1); y++) for (let x = Math.max(0, x0); x < Math.min(m.w, x1); x++) m.data[y * m.w + x] = 1; return m; };
@@ -68,4 +68,19 @@ assert.equal(sum(cut(ink, pw, [0, 95, pw, 108]).data), 0, 'the printed line is g
 assert.ok(hasWriting(...Object.values(cut(ink, pw, [140, 20, 220, 80])).slice(0, 3)), 'the writing is still there');
 const speck = mask(10, 10); speck.data[55] = 1; box(speck, 2, 2, 5, 5);
 assert.equal(sum(open2(speck.data, 10, 10)), 9, 'opening drops a one-pixel speck, keeps a 3x3 blob');
+// a tick box printed 12 px lower than the template puts it (a bent page): snapped onto its print, so an empty box
+// stays empty and a slashed one is still ticked; a box where the template says stays put
+{
+  const w = 400, h = 200, tq = new Uint8Array(100 * 50).fill(255), outline = (m, x0, y0) => { line(m, x0, y0, x0 + 24, y0, 2); line(m, x0 + 24, y0, x0 + 24, y0 + 24, 2); line(m, x0 + 24, y0 + 24, x0, y0 + 24, 2); line(m, x0, y0 + 24, x0, y0, 2); return m; };
+  for (const bx of [60, 260]) for (let k = 0; k <= 6; k++) { const x = bx / 4 + k; tq[15 * 100 + x] = tq[21 * 100 + x] = tq[(15 + k) * 100 + bx / 4] = tq[(15 + k) * 100 + bx / 4 + 6] = 0; }   // the box in quarter px
+  const d = mask(w, h); outline(d, 60, 72); outline(d, 260, 72); line(d, 262, 98, 286, 74, 5);
+  const rect = bx => [bx - 4, 56, bx + 28, 88];
+  const e = snapBox(d.data, w, h, rect(60), tq), t = snapBox(d.data, w, h, rect(260), tq);
+  assert.ok(e.moved && Math.abs(e.dy - 12) <= 4 && Math.abs(e.dx) <= 4, JSON.stringify(e));
+  assert.equal(readTicks(inkLayer(d.data, w, h, tq), w, h, [{ rect: rect(60) }])[0].state !== 'empty', true, 'unsnapped: the outline reads as ink');
+  assert.equal(readMovedTick(d.data, w, h, tq, e, '0').state, 'empty');
+  assert.equal(readMovedTick(d.data, w, h, tq, t, '1').state, 'ticked');
+  const still = mask(w, h); outline(still, 60, 60);
+  assert.equal(snapBox(still.data, w, h, rect(60), tq).moved, false, 'in place: not moved');
+}
 console.log('scan-crop: ok');

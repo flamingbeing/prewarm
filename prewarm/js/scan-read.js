@@ -5,7 +5,7 @@
 // Only fields with send = true are ever cut out for reading (numbers, codes, times, below the page header): IDs, dates,
 // names and free text stay on the phone, and the Worker refuses them anyway.
 import { alignPage } from './scan-align.js';
-import { inkLayer, cut, hasWriting, arrowShaft, throughArrow, markGroups, readTicks } from './scan-crop.js';
+import { inkLayer, cut, hasWriting, arrowShaft, throughArrow, markGroups, readTicks, snapBox, readMovedTick } from './scan-crop.js';
 import { clean, fillArrows, seriesChecks, ARROW } from './scan-checks.js';
 
 const TYPE_IN = 'type this in (not sent anywhere)';
@@ -21,7 +21,10 @@ export function planPage(gray, w, h, pg, fields, tplQ) {
   for (const f of fields) {
     const e = { value: null, flags: [], page: f.page, box: f.box || null };
     if (f.kind === 'tick') {
-      const res = Object.fromEntries(Object.entries(f.options).map(([o, rect]) => [o, readTicks(ink, w, h, [{ rect, label: o }])[0]]));
+      const res = Object.fromEntries(Object.entries(f.options).map(([o, rect]) => {
+        const s = snapBox(r.dark, w, h, rect, tplQ);   // the box a little off where the template says (a bent page)
+        return [o, s.moved ? readMovedTick(r.dark, w, h, tplQ, s, o) : readTicks(ink, w, h, [{ rect, label: o }])[0]];
+      }));
       let on = Object.keys(res).filter(o => res[o].state === 'ticked');
       const unsure = Object.keys(res).filter(o => res[o].state === 'unsure');
       e.flags = unsure.map(o => 'unsure tick: ' + o).concat(on.length > 1 ? ['more than one ticked'] : []);
