@@ -5,7 +5,7 @@
 // Only fields with send = true are ever cut out for reading (numbers, codes, times, below the page header): IDs, dates,
 // names and free text stay on the phone, and the Worker refuses them anyway.
 import { alignPage } from './scan-align.js';
-import { inkLayer, cut, hasWriting, arrowShaft, throughArrow, markGroups, readTicks, snapBox, readMovedTick } from './scan-crop.js';
+import { inkLayer, cut, hasWriting, arrowShaft, throughArrow, markGroups, readTicks, snapBox, readMovedTick, readCrop } from './scan-crop.js';
 import { clean, fillArrows, seriesChecks, ARROW } from './scan-checks.js';
 
 const TYPE_IN = 'type this in (not sent anywhere)';
@@ -42,7 +42,7 @@ export function planPage(gray, w, h, pg, fields, tplQ) {
     if (!f.send) { if (filled) e.flags.push(TYPE_IN); }
     else if (f.type !== 'text' && (filled ? throughArrow(ci.data, ci.w, ci.h) : arrowShaft(ci.data, ci.w, ci.h))) e.flags.push(ARROW);
     else if (filled) {
-      const c = cut(r.gray, w, f.crop);
+      const c = readCrop(r.gray, w, h, f.inner);   // wide, margin faded (the form map's f.crop is the old tight one)
       crops.push({ id: f.id, data: c.data, w: c.w, h: c.h });
       if (f.opts && f.opts.length <= 3) e.marks = markGroups(ci.data, ci.w, ci.h);
     }

@@ -31,6 +31,21 @@ export function cut(m, w, rect) {
   return { data: out, w: cw, h: ch };
 }
 
+// The picture sent for reading: the field's cell (inner, 3 px inside its lines) with a wide margin around it, the margin
+// faded so the reader can tell which cell is the field's. Owner, 30 Oct 2026: writing often runs over the cell's lines,
+// and the old crop (5 px past the cell, about 0.6 mm) cut it off. MARGIN is page px (1800 wide = A4, ~0.12 mm a px).
+export const MARGIN = [24, 36];
+export function readCrop(gray, w, h, inner, m = MARGIN, fade = 0.4) {
+  const [ix0, iy0, ix1, iy1] = inner, x0 = Math.max(0, ix0 - m[0]), y0 = Math.max(0, iy0 - m[1]);
+  const x1 = Math.min(w, ix1 + m[0]), y1 = Math.min(h, iy1 + m[1]), c = cut(gray, w, [x0, y0, x1, y1]);
+  const cx0 = ix0 - 3 - x0, cy0 = iy0 - 3 - y0, cx1 = ix1 + 3 - x0, cy1 = iy1 + 3 - y0;   // the cell with its lines
+  for (let y = 0; y < c.h; y++) for (let x = 0; x < c.w; x++) {
+    if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1) continue;
+    const i = y * c.w + x; c.data[i] = 255 - Math.round((255 - c.data[i]) * fade);
+  }
+  return c;
+}
+
 // 8-connected pieces of ink: [{ x, y, w, h, a }] (bounding box and pixel count), like connectedComponentsWithStats
 export function components(m, w, h) {
   const lab = new Int32Array(w * h), stack = new Int32Array(w * h), out = [];

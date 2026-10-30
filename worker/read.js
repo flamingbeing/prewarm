@@ -22,10 +22,10 @@ const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const PROMPT_A = 'This is a cropped cell from a printed anaesthesia study data sheet, photographed with a phone. ' +
   'Field: "{label}"{unit}. Expected: {expect}. Printed text (labels, units, lines, tick boxes) may be visible: ' +
   'read ONLY the handwritten entry. Reply with JSON only: {"text": "<what is written>", "legible": true|false}. ' +
-  'Read the entry in the middle of the image; digits cut off at the edges belong to a neighbouring cell. Use digits, and "." or ":" if written, and a leading minus sign if there is one. A cell with no handwriting is {"text": "", "legible": true}. If the cell holds only an arrow, a long vertical line or a ditto mark ("same as above"), reply {"text": "ARROW", "legible": true}. If a number is struck through and rewritten, read the rewritten one and set legible to false. ' +
+  'The field\'s own cell is the dark one in the middle; everything around it is faded and belongs to neighbouring cells: ignore writing there, except where this cell\'s own entry runs over its lines (that part is still this entry). Use digits, and "." or ":" if written, and a leading minus sign if there is one. A cell with no handwriting is {"text": "", "legible": true}. If the cell holds only an arrow, a long vertical line or a ditto mark ("same as above"), reply {"text": "ARROW", "legible": true}. If a number is struck through and rewritten, read the rewritten one and set legible to false. ' +
   'If you are not certain of every digit set legible to false and still give your best reading. Do not guess from context.';
 const PROMPT_B = 'Transcribe the handwriting in this image digit by digit. It is one entry for "{label}"{unit} ({expect}); ' +
-  'ignore anything printed. Return JSON only: {"text": "...", "legible": true|false}. Empty if nothing is written. ' +
+  'only the dark writing in the middle cell counts (faded writing around it belongs to other fields); ignore anything printed. Return JSON only: {"text": "...", "legible": true|false}. Empty if nothing is written. ' +
   'legible=false if any character could be read two ways.';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' } });
