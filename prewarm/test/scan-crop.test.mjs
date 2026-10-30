@@ -1,7 +1,7 @@
 // Scan pages: crop places and what the ink in a cell is (made-up marks only). node prewarm/test/scan-crop.test.mjs
 // The same cases as tools/scan/unit.py, drawn here with plain strokes instead of OpenCV text.
 import assert from 'node:assert/strict';
-import { cropRect, hasWriting, arrowShaft, throughArrow, markGroups, components, readTicks, inkLayer, open2, cut, snapBox, readMovedTick } from '../js/scan-crop.js';
+import { cropRect, hasWriting, arrowShaft, throughArrow, markGroups, components, readTicks, inkLayer, open2, cut, snapBox, readMovedTick, readCrop, MARGIN } from '../js/scan-crop.js';
 
 const mask = (w, h) => ({ w, h, data: new Uint8Array(w * h) });
 const box = (m, x0, y0, x1, y1) => { for (let y = Math.max(0, y0); y < Math.min(m.h, y1); y++) for (let x = Math.max(0, x0); x < Math.min(m.w, x1); x++) m.data[y * m.w + x] = 1; return m; };
@@ -82,5 +82,17 @@ assert.equal(sum(open2(speck.data, 10, 10)), 9, 'opening drops a one-pixel speck
   assert.equal(readMovedTick(d.data, w, h, tq, t, '1').state, 'ticked');
   const still = mask(w, h); outline(still, 60, 60);
   assert.equal(snapBox(still.data, w, h, rect(60), tq).moved, false, 'in place: not moved');
+}
+// the picture sent for reading: the cell plus MARGIN, the cell itself untouched, the margin faded towards white
+{
+  const w = 200, h = 160, g = new Uint8Array(w * h).fill(40), inner = [80, 60, 120, 100];
+  const c = readCrop(g, w, h, inner);
+  assert.deepEqual([c.w, c.h], [40 + 2 * MARGIN[0], 40 + 2 * MARGIN[1]], 'cell plus margin');
+  assert.equal(c.data[(MARGIN[1] + 20) * c.w + MARGIN[0] + 20], 40, 'the cell is untouched');
+  assert.equal(c.data[(MARGIN[1] - 2) * c.w + MARGIN[0] + 20], 40, 'and so are its lines (3 px past inner)');
+  assert.ok(c.data[2 * c.w + 2] > 150, 'the margin is faded');
+  assert.equal(g[0], 40, 'the page itself is not changed');
+  const edge = readCrop(g, w, h, [5, 5, 30, 30]);
+  assert.deepEqual([edge.w, edge.h], [30 + MARGIN[0], 30 + MARGIN[1]], 'clamped at the page edge');
 }
 console.log('scan-crop: ok');

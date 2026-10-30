@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { readGrayPng } from './png-gray.mjs';
 import { planPage, applyRead, finish, importDoc } from '../js/scan-read.js';
 import { ARROW } from '../js/scan-checks.js';
+import { MARGIN } from '../js/scan-crop.js';
 
 const D = new URL('./scan-parity/', import.meta.url);
 const fm = JSON.parse(readFileSync(new URL('form-map.json', D))), ex = JSON.parse(readFileSync(new URL('expected.json', D)));
@@ -17,7 +18,8 @@ for (const pg of ex.pages) {
   for (const c of r.crops) {
     const f = byId[c.id];
     assert.ok(f && f.send && f.kind === 'cell', `${pg.page}: only sendable cells are cut out (${c.id})`);
-    assert.deepEqual([c.w, c.h], [f.crop[2] - f.crop[0], f.crop[3] - f.crop[1]], c.id + ': crop size');
+    const [x0, y0, x1, y1] = f.inner, want = [Math.min(p.w, x1 + MARGIN[0]) - Math.max(0, x0 - MARGIN[0]), Math.min(p.h, y1 + MARGIN[1]) - Math.max(0, y0 - MARGIN[1])];
+    assert.deepEqual([c.w, c.h], want, c.id + ': crop is the cell plus the margin');
     assert.equal(c.data.length, c.w * c.h);
   }
   assert.ok(r.crops.length > 20, pg.page + ': the written cells are cut out');
