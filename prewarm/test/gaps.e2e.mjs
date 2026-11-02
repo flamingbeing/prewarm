@@ -253,7 +253,7 @@ jobs.push(() => tryit(async () => {
 
 // 11. a reading due after Underbody warm was logged defaults to Yes for it (block S of edge.e2e.mjs checks Gown warm)
 jobs.push(() => tryit(async () => {
-  const { ctx, pg } = await fresh();
+  const { ctx, pg } = await fresh('2026-10-13T10:00:00');   // a fixed clock: a real one near midnight put the 55 min reading before the start (00:16 < 23:31)
   await open(pg, 1);
   const st = await pg.textContent('[data-ev="io_under_start"] b');
   if (!/\d\d:\d\d/.test(st)) { await tapNow(pg, 'io_under_start'); await pg.waitForTimeout(900); }
