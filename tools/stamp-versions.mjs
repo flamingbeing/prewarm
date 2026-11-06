@@ -1,7 +1,8 @@
 // Deploy stamp for an app that uses app-update: reads sw.js, hashes every file in its SHELL list, and writes
 //   const VERSION = '<app>-<date>-<hash8>';     (the plain '<app>-v1' is kept in git; the deploy stamps it)
 //   const MANIFEST = {"./":"<hash12>", "app.js":"<hash12>", ...};
-// back into sw.js. Copy this file into the app's tools/ folder.
+// back into sw.js. Copy this file into the app's tools/ folder. A file <dir> lacks is looked for in <dir>/public/ (the
+// Vite layout, as the Worker serves it: routes.js publicFile), sw.js included.
 //   node tools/stamp-versions.mjs <dir> [--sw sw.js] [--date YYYY-MM-DD]   stamp (deploy build)
 //   node tools/stamp-versions.mjs <dir> --check                           only check that every SHELL file exists (CI)
 import fs from 'node:fs';
@@ -14,13 +15,14 @@ const sha = buf => crypto.createHash('sha256').update(buf).digest('hex');
 const STAMP = /-(\d{4}-\d{2}-\d{2}-)?[0-9a-f]{8}$/;
 // only an exact-version address on core.anawj.com never changes; any other cross-site file (e.g. design.anawj.com/v1/)
 // may change under the same address, so it gets a new hash every deploy and the phones fetch it again
-const PINNED = /^https:\/\/core\.anawj\.com\/[a-z0-9-]+\/\d+\.\d+\.\d+\//;
+const PINNED = /^https:\/\/core\.anawj\.com\/[a-z0-9-]+\/\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\//;   // a pre-release too (ui/1.0.0-rc.108/)
 const sgtDay = t => new Date(new Date(t).getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+const inDir = (dir, rel) => { const f = path.join(dir, rel); return fs.existsSync(f) ? f : path.join(dir, 'public', rel); };
 const lastChange = dir => { try { return execFileSync('git', ['log', '-1', '--format=%cI', '--', '.'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch (e) { return null; } };
 
 // now, gitDate: for tests (gitDate: the last git change of dir as ISO, null for none)
 export function stamp({ dir, sw = 'sw.js', date, write = true, now = Date.now(), gitDate }) {
-  const swPath = path.join(dir, sw);
+  const swPath = inDir(dir, sw);
   let src = fs.readFileSync(swPath, 'utf8');
   const version = src.match(/const VERSION = '([^']+)'/)?.[1];
   if (!version) throw new Error(`${sw}: no VERSION constant`);
@@ -30,10 +32,11 @@ export function stamp({ dir, sw = 'sw.js', date, write = true, now = Date.now(),
   const shell = [...shellSrc.matchAll(/'([^']+)'/g)].map(m => m[1]);
   const manifest = {};
   for (const u of shell) {
-    if (PINNED.test(u)) { manifest[u] = 'pinned'; continue; }   // an exact-pin address (core.anawj.com/update/0.2.0/...): its version is its identity
+    if (PINNED.test(u)) { manifest[u] = 'pinned'; continue; }   // an exact-pin address (core.anawj.com/ui/1.0.0-rc.108/update/...): its version is its identity
     if (/^https?:\/\//.test(u)) { manifest[u] = sha(`${u} ${now}`).slice(0, 12); continue; }   // mutable: per deploy
-    const rel = u === './' ? 'index.html' : u.split('?')[0].split('#')[0];
-    const file = path.join(dir, rel);
+    const at = u === './' ? '' : u.split('?')[0].split('#')[0];
+    const rel = at === '' || at.endsWith('/') ? `${at}index.html` : at;   // a page by its folder: its index.html
+    const file = inDir(dir, rel);
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) throw new Error(`${sw}: SHELL lists ${u}, but ${rel} does not exist`);
     manifest[u] = sha(fs.readFileSync(file)).slice(0, 12);
   }
