@@ -1,16 +1,14 @@
 # Status
 
 ## Now
-- Patients sync through app-sync 0.6.0 `createApp` since 25 Oct 2026 (the engine wiring in `js/cloud.js` is now
+- Patients sync through app-sync `createApp` (pinned to 0.6.3) since 25 Oct 2026 (the engine wiring in `js/cloud.js` is now
   config: same outbox and device-copy names, the lock's leave entry through `backend.onCommit`); log out still runs
   `forgetDevice` on createApp's parts (the screen warns about unsent saves first).
-- Nothing-lost report on (app-sync 0.5.0, 25 Oct 2026): counts only, hourly at most, to core.anawj.com/report.
-- Patients sync through app-sync 0.4.1 and the update module 0.2.0 since 25 Oct 2026 (#18 on 0.4.0, then 0.4.1:
-  a leave entry no longer drops a patient that still has unsent saves): the stamp only moves forward
-  (app-sync does it), an admin's lock writes its leave entry in the same transaction (no lock without its entry), a
-  patient locked while it still has unsent saves stays on the phone with a warning, the sync chip says "Checking"
-  until the server has answered and "at risk" only while offline, log out goes through `forgetDevice`, and an update
-  waits while a reading is half entered, a sheet is open, someone is typing or saves are sending.
+- Nothing-lost report on (since 25 Oct 2026): counts only, hourly at most, to core.anawj.com/report.
+- Behaviour kept from the earlier sync releases: the stamp only moves forward, an admin's lock writes its leave entry in the same
+  transaction, a patient locked while it still has unsent saves stays on the phone with a warning, the sync chip says
+  "Checking" until the server has answered and "at risk" only while offline, and an update waits while a reading is half
+  entered, a sheet is open, someone is typing or saves are sending.
 - Server stamps (app-sync 0.3.0, #17) merged 25 Oct 2026: writes carry `serverAt`; indexes deployed, `serverAt`
   backfilled. The hub still listens by `updatedAt` (client mode).
 - Live from this repo's Worker since 21 Oct 2026 (moved from anawj-site; no downtime). Rules deploy on merge.
