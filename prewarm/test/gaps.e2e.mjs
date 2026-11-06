@@ -38,7 +38,7 @@ const stored = (pg, id, k) => pg.evaluate(([i, k]) => JSON.parse(localStorage.ge
 // 1. a new version takes over at once and the app reloads once by itself (app-update, owner 24 Oct 2026: instant, no
 // banner; since 25 Oct not while someone is typing), and the version line shows the running version. Not in demo mode, so this phone runs the real service worker
 // against a small server of the repo whose sw.js can change version (and skips the design kit, which the test machine
-// may not reach). The core (core.anawj.com/update/) must be reachable.
+// may not reach). The core (core.anawj.com/ui/1.0.0-rc.108/update/) must be reachable.
 jobs.push(() => tryit(async () => {
   let swv = 'v-first';
   const srv = http.createServer((req, res) => {

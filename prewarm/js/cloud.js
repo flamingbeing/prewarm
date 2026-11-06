@@ -20,7 +20,7 @@ import { lockLeave, statusInput } from './sync-rules.js';
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
 // the sync engine (patients): app-sync's modules at an exact version, precached by sw.js
 const CORE = 'https://core.anawj.com/sync/1.5.1/';
-export const UPDATE = 'https://core.anawj.com/update/1.5.1/register.js';
+export const UPDATE = 'https://core.anawj.com/ui/1.0.0-rc.108/update/register.js';
 const params = new URLSearchParams(location.search);
 // ?emulator on localhost: local Firebase emulators with the demo project (browser tests only; never the live project)
 const EMU = params.has('emulator') && ['localhost', '127.0.0.1'].includes(location.hostname);

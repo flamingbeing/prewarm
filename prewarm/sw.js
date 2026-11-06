@@ -69,16 +69,16 @@ const SHELL = [
   'https://core.anawj.com/sync/1.5.1/src/view.js',
   'https://core.anawj.com/sync/1.5.1/sync.js',
   // the page side of app-update (one exact version), so the app opens offline
-  'https://core.anawj.com/update/1.5.1/register.js',
+  'https://core.anawj.com/ui/1.0.0-rc.108/update/register.js',
 ];
 const MANIFEST = {};
 
-importScripts('https://core.anawj.com/update/1.5.1/sw-core.js');
+importScripts('https://core.anawj.com/ui/1.0.0-rc.108/update/sw-core.js');
 AppUpdate.init({
   app: 'prewarm', version: VERSION, shell: SHELL, manifest: MANIFEST,
   never: ['/scan-api/', /\/update\.html$/, /\/sw\.js$/],
   runtime: [
-    { name: 'pinned', match: /^https:\/\/core\.anawj\.com\/(sync|update|ui)\/\d+\.\d+\.\d+(-rc\.\d+)?\//, strategy: 'cache-first', max: 40 },
+    { name: 'pinned', match: /^https:\/\/core\.anawj\.com\/(sync|update|ui)\/\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\//, strategy: 'cache-first', max: 40 },
     { name: 'files', match: url => url.origin === self.location.origin && /\.(m?js|css|json|png|svg|jpe?g|webp|ico|woff2?|webmanifest|docx)$/i.test(url.pathname), strategy: 'stale-while-revalidate', max: 60 },
   ],
 });
